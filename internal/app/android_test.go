@@ -250,9 +250,9 @@ func TestInstallArgs(t *testing.T) {
 
 func TestInstallTargetsFromActiveDevicesUsesPhysicalSerials(t *testing.T) {
 	selected := map[string]bool{
-		"PHONE-TEST-001":   true,
-		"emulator-5554": true,
-		"missing":       true,
+		"PHONE-TEST-001": true,
+		"emulator-5554":  true,
+		"missing":        true,
 	}
 	devices := []ActiveDevice{
 		{Serial: "PHONE-TEST-001", State: "device", Details: map[string]string{"model": "SM_S931Q"}},

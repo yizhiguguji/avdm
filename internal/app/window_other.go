@@ -4,6 +4,10 @@ package app
 
 import "fmt"
 
+func activateProcessNative(pid int) error {
+	return fmt.Errorf("激活外部窗口目前仅支持 macOS")
+}
+
 func MainDisplaySize() (int, int, bool) {
 	return 0, 0, false
 }

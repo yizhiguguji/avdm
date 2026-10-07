@@ -31,7 +31,7 @@ deps-macos:
 
 cli:
 	mkdir -p "$(BIN_DIR)"
-	go build -o "$(BIN_DIR)/$(APP_STEM)" ./cmd/adm
+	go build -trimpath -ldflags "-s -w" -o "$(BIN_DIR)/$(APP_STEM)" ./cmd/adm
 
 app: package-macos
 
@@ -51,7 +51,7 @@ $(APP_ICON_ICNS): $(APP_ICON_PNG)
 
 package-macos: $(APP_ICON_ICNS)
 	mkdir -p "$(APP_CONTENTS)/MacOS" "$(APP_CONTENTS)/Resources"
-	go build -ldflags "-X main.applicationID=$(APP_ID)" -o "$(APP_EXECUTABLE)" ./cmd/adm-gui
+	go build -trimpath -ldflags "-s -w -X main.applicationID=$(APP_ID)" -o "$(APP_EXECUTABLE)" ./cmd/adm-gui
 	cp "$(APP_ICON_ICNS)" "$(APP_CONTENTS)/Resources/$(APP_STEM).icns"
 	cp "scripts/install-macos-deps.sh" "$(APP_CONTENTS)/Resources/install-macos-deps.sh"
 	chmod +x "$(APP_CONTENTS)/Resources/install-macos-deps.sh"

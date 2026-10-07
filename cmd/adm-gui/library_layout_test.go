@@ -53,7 +53,7 @@ func TestNarrowLibraryPreservesActualStateAndButtonTextHeight(t *testing.T) {
 	a.Settings().SetTheme(admTheme{base: theme.DefaultTheme()})
 	state := widget.NewLabel("未启动")
 	actions := container.NewHBox(compactButton("启动", nil), compactButton("管理", nil))
-	objects := []fyne.CanvasObject{widget.NewCheck("", nil), widget.NewLabel("example_5050"), widget.NewLabel("模拟器"), state, actions}
+	objects := []fyne.CanvasObject{widget.NewCheck("", nil), widget.NewLabel("demo_5050"), widget.NewLabel("模拟器"), state, actions}
 	l := libraryRowLayout{}
 	size := l.MinSize(objects)
 	l.Layout(objects, size)

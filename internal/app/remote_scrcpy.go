@@ -97,7 +97,15 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
 		return err
 	}
 	logPath := logFile.Name()
-	cmd := exec.Command(path, scrcpyArgs(serial, windowTitle, alwaysOnTop)...)
+	args := scrcpyArgs(serial, windowTitle, alwaysOnTop)
+	if nativeWindowAccessUnavailable() {
+		a.remoteMu.Lock()
+		slot := max(0, len(a.scrcpySessions)-1)
+		a.remoteMu.Unlock()
+		width, height, _ := MainDisplaySize()
+		args = append(args, scrcpyFallbackPositionArgs(slot, width, height)...)
+	}
+	cmd := exec.Command(path, args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
@@ -295,10 +303,16 @@ func scrcpyLogExcerpt(path string) string {
 }
 
 func prepareScrcpyWindow(pid int) error {
-	if err := resizeProcessWindow(pid, 0, scrcpyWindowHeight); err != nil {
-		return fmt.Errorf("实时镜像已打开，但统一窗口尺寸失败：%w", err)
+	return prepareScrcpyWindowWithOps(pid, !nativeWindowAccessUnavailable(), resizeProcessWindow, focusProcessWindow)
+}
+
+func prepareScrcpyWindowWithOps(pid int, canResize bool, resize func(int, int, int) error, focus func(int) error) error {
+	if canResize {
+		if err := resize(pid, 0, scrcpyWindowHeight); err != nil {
+			return fmt.Errorf("实时镜像已打开，但统一窗口尺寸失败：%w", err)
+		}
 	}
-	if err := focusProcessWindow(pid); err != nil {
+	if err := focus(pid); err != nil {
 		return fmt.Errorf("实时镜像已打开，但聚焦窗口失败：%w", err)
 	}
 	return nil
@@ -309,4 +323,19 @@ func prepareScrcpyWindow(pid int) error {
 func scrcpyCommandUniformGeometry(command string) bool {
 	fields := strings.Fields(command)
 	return !slices.Contains(fields, "--no-window-aspect-ratio-lock") && slices.Contains(fields, "--window-width=0") && slices.Contains(fields, "--render-fit=letterbox")
+}
+
+// scrcpy can place its own new window without Accessibility permission.
+// Use separate slots while preserving the natural aspect ratio set above.
+func scrcpyFallbackPositionArgs(slot, screenWidth, screenHeight int) []string {
+	if screenWidth <= 0 {
+		screenWidth = 1440
+	}
+	if screenHeight <= 0 {
+		screenHeight = 900
+	}
+	columns := max(1, (screenWidth-32)/360)
+	rows := max(1, (screenHeight-100)/scrcpyWindowHeight)
+	slot = max(0, slot) % (columns * rows)
+	return []string{fmt.Sprintf("--window-x=%d", 16+(slot%columns)*360), fmt.Sprintf("--window-y=%d", 60+(slot/columns)*scrcpyWindowHeight)}
 }

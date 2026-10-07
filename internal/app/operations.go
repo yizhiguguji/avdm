@@ -118,12 +118,20 @@ func emulatorLaunchArgs(avdName string, grpcPort int) []string {
 }
 
 func focusEmulatorWindow(avdName, serial string) error {
+	if nativeWindowAccessUnavailable() {
+		if pid, ok := qemuPIDForAVD(avdName); ok {
+			return activateProcessNative(pid)
+		}
+	}
 	return focusEmulatorWindowNative(avdName, serial)
 }
 
 func focusProcessWindow(pid int) error {
 	if pid <= 0 {
 		return fmt.Errorf("无效的进程 pid：%d", pid)
+	}
+	if nativeWindowAccessUnavailable() {
+		return activateProcessNative(pid)
 	}
 	return focusProcessWindowNative(pid)
 }

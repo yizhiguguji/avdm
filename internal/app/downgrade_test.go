@@ -16,13 +16,13 @@ func TestAnalyzeInstallFailureDetectsRealDowngradeOutput(t *testing.T) {
 }
 
 func TestAsReinstallRequiredUnwrapsWrappedError(t *testing.T) {
-	base := &ReinstallRequiredError{Package: "com.example.im", Serials: []string{"emulator-5554"}}
+	base := &ReinstallRequiredError{Package: "com.example.test", Serials: []string{"emulator-5554"}}
 	wrapped := fmt.Errorf("安装失败：%w", base)
 	got, ok := AsReinstallRequired(wrapped)
 	if !ok {
 		t.Fatalf("AsReinstallRequired should unwrap wrapped error")
 	}
-	if got.Package != "com.example.im" || len(got.Serials) != 1 {
+	if got.Package != "com.example.test" || len(got.Serials) != 1 {
 		t.Fatalf("unexpected unwrapped value: %+v", got)
 	}
 }
@@ -34,13 +34,13 @@ func TestAsReinstallRequiredIgnoresOtherErrors(t *testing.T) {
 }
 
 func TestReinstallRequiredErrorMessageMentionsDataLoss(t *testing.T) {
-	e := &ReinstallRequiredError{Package: "com.example.im", Serials: []string{"emulator-5554"}}
+	e := &ReinstallRequiredError{Package: "com.example.test", Serials: []string{"emulator-5554"}}
 	msg := e.Error()
 	if msg == "" {
 		t.Fatal("empty error message")
 	}
 	// Should name the package and warn about data.
-	if !contains(msg, "com.example.im") || !contains(msg, "数据") {
+	if !contains(msg, "com.example.test") || !contains(msg, "数据") {
 		t.Fatalf("message should mention package and data loss: %q", msg)
 	}
 }

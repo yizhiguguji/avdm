@@ -3,7 +3,7 @@
 package app
 
 /*
-#cgo darwin LDFLAGS: -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation
+#cgo darwin LDFLAGS: -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework AppKit -lobjc
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -12,6 +12,15 @@ package app
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
+#include <objc/runtime.h>
+#include <objc/message.h>
+
+static int adm_activate_process(int pid) {
+ id cls = (id)objc_getClass("NSRunningApplication");
+ id app = ((id (*)(id, SEL, int))objc_msgSend)(cls, sel_registerName("runningApplicationWithProcessIdentifier:"), pid);
+ if (app == NULL) { return 0; }
+ return ((BOOL (*)(id, SEL, unsigned long))objc_msgSend)(app, sel_registerName("activateWithOptions:"), 2) != 0;
+}
 
 static char* adm_strdup(const char* value) {
 	if (value == NULL) {
@@ -840,6 +849,13 @@ func MainDisplaySize() (int, int, bool) {
 	width := int(bounds.size.width)
 	height := int(bounds.size.height)
 	return width, height, width > 0 && height > 0
+}
+
+func activateProcessNative(pid int) error {
+	if C.adm_activate_process(C.int(pid)) == 0 {
+		return fmt.Errorf("无法激活外部窗口进程：%d", pid)
+	}
+	return nil
 }
 
 func accessibilityTrustedNative() bool {

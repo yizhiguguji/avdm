@@ -231,7 +231,12 @@ func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus f
 }
 
 func (a *App) GUIOpenLiveMirrors(entryKeys []string) error {
-	return openLiveMirrors(entryKeys, a.GUIOpenLiveMirror, func(keys []string) error { return a.GUITileEmulatorWindows(keys, 0) })
+	return openLiveMirrors(entryKeys, a.GUIOpenLiveMirror, func(keys []string) error {
+		if nativeWindowAccessUnavailable() {
+			return nil
+		}
+		return a.GUITileEmulatorWindows(keys, 0)
+	})
 }
 
 func openLiveMirrors(entryKeys []string, open func(string) error, tile func([]string) error) error {

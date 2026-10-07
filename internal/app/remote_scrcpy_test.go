@@ -1,9 +1,12 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -151,5 +154,52 @@ func TestScrcpyReuseRequiresUniformGeometry(t *testing.T) {
 	}
 	if !scrcpyCommandUniformGeometry("scrcpy " + strings.Join(scrcpyArgs("phone", "mirror", false), " ")) {
 		t.Fatal("current mirror should be reusable")
+	}
+}
+
+func TestMirrorWithoutWindowAccessKeepsOpenedWindowUsable(t *testing.T) {
+	for _, canResize := range []bool{false, true} {
+		resizes, focuses := 0, 0
+		err := prepareScrcpyWindowWithOps(42, canResize, func(pid, width, height int) error {
+			resizes++
+			if pid != 42 || width != 0 || height != scrcpyWindowHeight {
+				t.Fatal("wrong window geometry")
+			}
+			return nil
+		}, func(pid int) error {
+			focuses++
+			return nil
+		})
+		wantResizes := 0
+		if canResize {
+			wantResizes = 1
+		}
+		if err != nil || resizes != wantResizes || focuses != 1 {
+			t.Fatalf("canResize=%v resizes=%d focuses=%d err=%v", canResize, resizes, focuses, err)
+		}
+	}
+}
+
+func TestMirrorFallbackDoesNotHideRealActivationFailure(t *testing.T) {
+	failure := errors.New("process exited")
+	err := prepareScrcpyWindowWithOps(42, false, func(int, int, int) error {
+		t.Fatal("untrusted process tried to resize")
+		return nil
+	}, func(int) error { return failure })
+	if !errors.Is(err, failure) {
+		t.Fatalf("lost activation failure: %v", err)
+	}
+}
+
+func TestMirrorFallbackPositionsUseSeparateSlots(t *testing.T) {
+	first := scrcpyFallbackPositionArgs(0, 1440, 900)
+	second := scrcpyFallbackPositionArgs(1, 1440, 900)
+	if reflect.DeepEqual(first, second) || !slices.Contains(first, "--window-x=16") || !slices.Contains(second, "--window-x=376") {
+		t.Fatalf("new mirrors overlap: %v %v", first, second)
+	}
+	for _, dimension := range []int{0, 200} {
+		if got := scrcpyFallbackPositionArgs(100, dimension, dimension); len(got) != 2 {
+			t.Fatal("invalid fallback position")
+		}
 	}
 }

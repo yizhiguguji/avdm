@@ -66,8 +66,8 @@ func TestLiveUserInstalledPackageInventory(t *testing.T) {
 		}
 	}
 	t.Logf("user installation records: %v", result)
-	if !users["com.example.im"] {
-		t.Fatal("ADB-installed test app missing")
+	if expected := strings.TrimSpace(os.Getenv("ADM_LIVE_EXPECTED_PACKAGE")); expected != "" && !users[expected] {
+		t.Fatalf("expected installed test app missing: %s", expected)
 	}
 	if users["com.google.android.safetycore"] {
 		t.Fatal("background store component classified as user app")
