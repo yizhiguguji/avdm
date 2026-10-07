@@ -184,6 +184,7 @@ type GUIApp struct {
 	controlGrid          *fyne.Container
 	controlSummary       *widget.Label
 	controlDensity       string
+	controlDensitySelect *widget.Select
 	controlSelected      map[string]bool
 	controlHidden        map[string]bool
 	controlCards         map[string]*controlCardView

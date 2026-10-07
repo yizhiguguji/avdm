@@ -14,9 +14,9 @@ import (
 )
 
 var controlDensityOptions = []controlDensitySpec{
-	{key: controlDensitySmall, label: "小", cardSize: controlCardSize(240, 352), previewSize: fyne.NewSize(158, 352)},
-	{key: controlDensityStandard, label: "中", cardSize: controlCardSize(264, 448), previewSize: fyne.NewSize(202, 448)},
-	{key: controlDensityHD, label: "大", cardSize: controlCardSize(304, 544), previewSize: fyne.NewSize(245, 544)},
+	{key: controlDensitySmall, label: "小", cardSize: controlCardSize(340, 584), previewSize: fyne.NewSize(300, 584)},
+	{key: controlDensityStandard, label: "标准", cardSize: controlCardSize(410, 724), previewSize: fyne.NewSize(360, 724)},
+	{key: controlDensityHD, label: "高清", cardSize: controlCardSize(500, 920), previewSize: fyne.NewSize(440, 920)},
 }
 
 func (g *GUIApp) renderControlCenter() {
@@ -144,6 +144,8 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 			hideLabel = "显示画面"
 		}
 		menu := fyne.NewMenu("设备操作",
+			fyne.NewMenuItem("复制设备名称", func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) }),
+			fyne.NewMenuItem("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }),
 			fyne.NewMenuItem("设为主目标", func() {
 				g.runAction("设为主目标 "+card.entry.Label, func() error { return g.backend.GUISetCurrentDevice(key) })
 			}),
@@ -163,7 +165,7 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 	}
 	g.registerActionButtons(independent, home, back)
 	card.wall.previewBox = container.NewGridWrap(spec.previewSize, previewInteractiveObject(preview))
-	header := container.NewBorder(nil, nil, selected, more, title)
+	header := container.NewBorder(nil, nil, selected, more, container.NewStack(title, newCopyTapLayer(func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) })))
 	actions := container.NewGridWithColumns(3, back, home, independent)
 	card.wall.object = controlCardSurface(container.NewVBox(header, container.NewCenter(card.wall.previewBox), container.NewThemeOverride(status, captionTheme{g.app.Settings().Theme()}), actions))
 	return card.wall.object
@@ -201,7 +203,7 @@ func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObjec
 		start.Importance = widget.MediumImportance
 		g.prepareActionButton(start)
 		actions.Add(start)
-	} else if readyWallEntry(entry) {
+	} else if entry.Running || readyWallEntry(entry) {
 		actions.Add(compactButton("窗口", func() { g.openIndependentDeviceWindow(entry.Key, entry.Label) }))
 	}
 	actions.Add(manage)
@@ -211,7 +213,7 @@ func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObjec
 	}
 	identityLabel := widget.NewLabel(detail)
 	identityLabel.Truncation = fyne.TextTruncateEllipsis
-	identity := container.NewVBox(title, container.NewThemeOverride(identityLabel, captionTheme{g.app.Settings().Theme()}))
+	identity := container.NewVBox(g.copyableControlText(title, "设备名称", controlCardTitle(entry)), g.copyableControlText(container.NewThemeOverride(identityLabel, captionTheme{g.app.Settings().Theme()}), "设备编号", controlCopyIdentifier(entry)))
 	kind := "模拟器"
 	if entry.Active != nil && !entry.Active.IsEmulator {
 		kind = "真机"
@@ -643,6 +645,19 @@ func (g *GUIApp) buildStoppedDeviceCard(entry core.DeviceEntry) fyne.CanvasObjec
 		start.Importance = widget.MediumImportance
 		g.prepareActionButton(start)
 		actions.Add(start)
+	} else if entry.Running || (entry.Active != nil && entry.Active.IsEmulator) {
+		actions.Add(compactButton("窗口", func() { g.openIndependentDeviceWindow(entry.Key, entry.Label) }))
+		actions.Add(compactButton("关闭", func() { g.showCloseEntryDialog(entry) }))
 	}
-	return container.NewVBox(container.NewBorder(nil, nil, selected, nil, name), container.NewBorder(nil, nil, widget.NewLabel(workbenchDeviceState(entry)), actions, nil), widget.NewSeparator())
+	return container.NewVBox(container.NewBorder(nil, nil, selected, nil, g.copyableControlText(name, "设备名称", controlCardTitle(entry))), container.NewBorder(nil, nil, widget.NewLabel(workbenchDeviceState(entry)), actions, nil), widget.NewSeparator())
+}
+
+func controlCopyIdentifier(entry core.DeviceEntry) string {
+	if entry.Active != nil {
+		return entry.Active.Serial
+	}
+	if entry.AVD != nil {
+		return entry.AVD.Name
+	}
+	return entry.Key
 }

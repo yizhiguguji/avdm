@@ -466,7 +466,12 @@ func (g *GUIApp) showCloseEntryDialog(entry core.DeviceEntry) {
 				return
 			}
 		}
-		g.runAction(title+" "+entry.Label, func() error { return g.backend.GUICloseDeviceConfirmed(device.Serial, confirmation) })
+		g.runAction(title+" "+entry.Label, func() error {
+			if device.IsEmulator {
+				return g.backend.GUICloseDevice(entry.Key)
+			}
+			return g.backend.GUICloseDeviceConfirmed(device.Serial, confirmation)
+		})
 	})
 }
 
@@ -518,6 +523,16 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 	targetLabel.Wrapping = fyne.TextWrapWord
 
 	var sections []fyne.CanvasObject
+	sections = append(sections, container.NewHBox(
+		compactButton("复制设备名称", func() { g.copyControlText("设备名称", controlCardTitle(entry)) }),
+		compactButton("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(entry)) }),
+	))
+	if entry.Running || (entry.Active != nil && entry.Active.IsEmulator) {
+		sections = append(sections, container.NewHBox(
+			compactButton("聚焦窗口", func() { g.openIndependentDeviceWindow(entry.Key, entry.Label) }),
+			compactButton("关闭模拟器…", func() { g.showCloseEntryDialog(entry) }),
+		))
+	}
 	if entry.AVD != nil {
 		nameEntry := widget.NewEntry()
 		nameEntry.SetText(entry.AVD.Name)

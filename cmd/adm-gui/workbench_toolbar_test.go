@@ -45,8 +45,8 @@ func TestActionPlanSeparatesTargetsAndSkipReasons(t *testing.T) {
 		t.Fatalf("plan must identify targets and explain exclusions: %s", plan.details())
 	}
 	stop := makeActionPlan(actionStop, TargetSelection{Entries: entries, Explicit: true}, entries, false)
-	if strings.Join(stop.keys(), ",") != "live,offline" {
-		t.Fatalf("stop must target attached emulators only: %+v", stop)
+	if strings.Join(stop.keys(), ",") != "live,starting,offline" {
+		t.Fatalf("stop must include starting and offline emulators without including phones: %+v", stop)
 	}
 }
 

@@ -105,8 +105,8 @@ func actionUnavailableReason(kind actionKind, entry core.DeviceEntry) string {
 			return "模拟器已启动"
 		}
 	case actionStop:
-		if entry.Active == nil || !entry.Active.IsEmulator {
-			return "仅支持已连接的模拟器"
+		if (entry.Active == nil || !entry.Active.IsEmulator) && !(entry.AVD != nil && entry.Running) {
+			return "仅支持运行中的模拟器"
 		}
 	case actionDelete:
 		if entry.AVD == nil {
@@ -234,7 +234,7 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		g.controlHidden = map[string]bool{}
 	}
 	if g.controlDensity == "" {
-		g.controlDensity = controlDensityStandard
+		g.controlDensity = g.app.Preferences().StringWithFallback("wall.density", controlDensitySmall)
 	}
 	g.controlSummary = widget.NewLabel("")
 	g.controlGrid = container.NewVBox()
@@ -323,7 +323,11 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		g.showWorkbenchMenu(operations, menu)
 	}
 	g.logToolIcon = compactButton("日志", func() { g.logCollapsed = !g.logCollapsed; g.applyWorkbenchCollapseState() })
-	left := container.New(centeredRowLayout{}, g.wallLibraryButton, container.New(centeredControlLayout{width: 160}, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()})))
+	g.controlDensitySelect = widget.NewSelect([]string{"画面：小", "画面：标准", "画面：高清"}, func(label string) {
+		g.setControlDensity(controlDensityKeyByLabel(strings.TrimPrefix(label, "画面：")))
+	})
+	g.controlDensitySelect.SetSelected("画面：" + controlDensityLabel(g.controlDensity))
+	left := container.New(centeredRowLayout{}, g.wallLibraryButton, container.New(centeredControlLayout{width: 112}, g.controlDensitySelect), container.New(centeredControlLayout{width: 160}, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()})))
 	right := container.New(centeredRowLayout{}, operations, g.logToolIcon)
 	row := container.NewBorder(nil, nil, left, right, toolbar)
 	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.NewPadded(row)), nil, nil, nil, container.NewPadded(workspace)))
@@ -345,8 +349,8 @@ func (g *GUIApp) showWallViewDialog(view *widget.Button) {
 	if g.wallStateFilter != "" {
 		state.SetSelected(g.wallStateFilter)
 	}
-	density := widget.NewSelect([]string{"紧凑", "标准", "放大"}, nil)
-	labels := map[string]string{controlDensitySmall: "紧凑", controlDensityStandard: "标准", controlDensityHD: "放大"}
+	density := widget.NewSelect(controlDensityLabels(), nil)
+	labels := map[string]string{controlDensitySmall: "小", controlDensityStandard: "标准", controlDensityHD: "高清"}
 	density.SetSelected(labels[g.controlDensity])
 	reset := compactButton("重置筛选", func() { search.SetText(""); state.SetSelected(wallStateAll) })
 	content := container.NewVBox(
@@ -366,7 +370,7 @@ func (g *GUIApp) showWallViewDialog(view *widget.Button) {
 		g.wallStateFilter = state.Selected
 		for key, label := range labels {
 			if label == density.Selected {
-				g.controlDensity = key
+				g.setControlDensity(key)
 			}
 		}
 		if g.wallSearch != "" || (g.wallStateFilter != "" && g.wallStateFilter != wallStateAll) {
@@ -570,4 +574,16 @@ func (r *centeredSearchRenderer) Refresh() {
 	}
 	r.Layout(r.entry.Size())
 	r.hint.Refresh()
+}
+
+func (g *GUIApp) setControlDensity(key string) {
+	g.controlDensity = key
+	g.app.Preferences().SetString("wall.density", key)
+	if g.controlDensitySelect != nil {
+		label := "画面：" + controlDensityLabel(key)
+		if g.controlDensitySelect.Selected != label {
+			g.controlDensitySelect.SetSelected(label)
+		}
+	}
+	g.renderControlCenter()
 }

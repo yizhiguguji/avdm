@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -51,12 +52,10 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
 		select {
 		case <-existing.Done:
 		default:
-			if existing.AlwaysOnTop == alwaysOnTop {
-				_ = resizeProcessWindow(existing.Cmd.Process.Pid, scrcpyWindowWidth, scrcpyWindowHeight)
-				_ = focusProcessWindow(existing.Cmd.Process.Pid)
-				return nil
+			if existing.AlwaysOnTop == alwaysOnTop && scrcpyCommandUniformGeometry(strings.Join(existing.Cmd.Args, " ")) {
+				return prepareScrcpyWindow(existing.Cmd.Process.Pid)
 			}
-			if err := existing.Cmd.Process.Signal(os.Interrupt); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			if err := existing.Cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
 				return fmt.Errorf("关闭旧独立窗失败：%w", err)
 			}
 			select {
@@ -67,13 +66,11 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
 		}
 	}
 	if pid, command, ok := runningScrcpyProcessInfo(serial); ok {
-		if scrcpyCommandAlwaysOnTop(command) == alwaysOnTop {
-			_ = resizeProcessWindow(pid, scrcpyWindowWidth, scrcpyWindowHeight)
-			_ = focusProcessWindow(pid)
-			return nil
+		if scrcpyCommandAlwaysOnTop(command) == alwaysOnTop && scrcpyCommandUniformGeometry(command) {
+			return prepareScrcpyWindow(pid)
 		}
 		if !strings.Contains(command, "--window-title=安卓设备矩阵 - ") {
-			return fmt.Errorf("该设备已有其他程序打开的镜像，请先关闭该窗口，再设置置顶")
+			return fmt.Errorf("该设备已有其他程序打开的镜像，请先关闭该窗口，再应用窗口尺寸或置顶设置")
 		}
 		if err := stopPreviousScrcpyWindow(pid); err != nil {
 			return err
@@ -134,9 +131,7 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
 		}
 		return fmt.Errorf("实时镜像启动后立即退出\n日志：%s%s", logPath, excerpt)
 	case <-time.After(700 * time.Millisecond):
-		_ = resizeProcessWindow(cmd.Process.Pid, scrcpyWindowWidth, scrcpyWindowHeight)
-		_ = focusProcessWindow(cmd.Process.Pid)
-		return nil
+		return prepareScrcpyWindow(cmd.Process.Pid)
 	}
 }
 
@@ -155,6 +150,8 @@ func scrcpyArgs(serial, windowTitle string, alwaysOnTop bool) []string {
 		"--max-fps=60",
 		"--video-codec=h264",
 		"--no-audio",
+		"--no-window-aspect-ratio-lock",
+		"--render-fit=letterbox",
 		"--keyboard=uhid",
 		"--window-title=" + windowTitle,
 		fmt.Sprintf("--window-width=%d", scrcpyWindowWidth),
@@ -236,7 +233,7 @@ func stopPreviousScrcpyWindow(pid int) error {
 		return err
 	}
 	defer process.Release()
-	if err := process.Signal(os.Interrupt); err != nil {
+	if err := process.Signal(syscall.SIGTERM); err != nil {
 		return fmt.Errorf("关闭旧独立窗失败：%w", err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -278,4 +275,21 @@ func scrcpyLogExcerpt(path string) string {
 		lines = lines[len(lines)-8:]
 	}
 	return "\n最近日志：\n" + strings.Join(lines, "\n")
+}
+
+func prepareScrcpyWindow(pid int) error {
+	if err := resizeProcessWindow(pid, scrcpyWindowWidth, scrcpyWindowHeight); err != nil {
+		return fmt.Errorf("实时镜像已打开，但统一窗口尺寸失败：%w", err)
+	}
+	if err := focusProcessWindow(pid); err != nil {
+		return fmt.Errorf("实时镜像已打开，但聚焦窗口失败：%w", err)
+	}
+	return nil
+}
+
+// Old app-owned mirrors retain scrcpy's aspect lock, so they must be reopened
+// before the new geometry contract can apply. Never replace unrelated mirrors.
+func scrcpyCommandUniformGeometry(command string) bool {
+	fields := strings.Fields(command)
+	return slices.Contains(fields, "--no-window-aspect-ratio-lock") && slices.Contains(fields, "--render-fit=letterbox")
 }
