@@ -21,6 +21,8 @@ func TestScrcpyArgsAvoidTimeoutAndKeepDeviceActive(t *testing.T) {
 		"--max-fps=60",
 		"--video-codec=h264",
 		"--no-audio",
+		"--no-window-aspect-ratio-lock",
+		"--render-fit=letterbox",
 		"--keyboard=uhid",
 		"--window-title=安卓设备矩阵 test",
 		"--window-width=288",
@@ -137,4 +139,15 @@ func scrcpyArgsContain(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestScrcpyReuseRequiresUniformGeometry(t *testing.T) {
+	for _, command := range []string{"scrcpy --serial=phone", "scrcpy --render-fit=letterbox", "scrcpy --no-window-aspect-ratio-lock"} {
+		if scrcpyCommandUniformGeometry(command) {
+			t.Fatalf("legacy mirror incorrectly reused: %s", command)
+		}
+	}
+	if !scrcpyCommandUniformGeometry("scrcpy " + strings.Join(scrcpyArgs("phone", "mirror", false), " ")) {
+		t.Fatal("current mirror should be reusable")
+	}
 }

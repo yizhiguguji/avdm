@@ -154,18 +154,15 @@ func (a *App) GUIFocusDeviceWindow(entryKey string) error {
 	if !ok {
 		return fmt.Errorf("未找到设备：%s", entryKey)
 	}
-	if entry.Active != nil && entry.Active.IsEmulator {
-		return focusEmulatorWindow(entry.Active.AVDName, entry.Active.Serial)
-	}
-	if entry.AVD != nil && entry.Running {
-		return focusEmulatorWindow(entry.AVD.Name, "")
+	if entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running {
+		name, serial := emulatorEntryIdentity(entry)
+		return focusEmulatorWindow(name, serial)
 	}
 	return fmt.Errorf("该条目没有可聚焦的模拟器窗口：%s", entry.Label)
 }
 
 func (a *App) GUIOpenLiveMirror(entryKey string) error {
-	alwaysOnTop := true
-	return a.openLiveMirror(entryKey, &alwaysOnTop)
+	return a.openLiveMirror(entryKey, nil)
 }
 
 // GUISetLiveMirrorAlwaysOnTop opens/reopens the phone mirror with the chosen
@@ -184,24 +181,27 @@ func (a *App) openLiveMirror(entryKey string, requestedTop *bool) error {
 	if !ok {
 		return fmt.Errorf("未找到设备：%s", entryKey)
 	}
+	return a.openLiveMirrorEntry(entry, requestedTop, focusEmulatorWindow)
+}
+
+// The normal open action focuses existing emulator windows regardless of ADB
+// readiness. An explicit window-level setting remains a phone-only operation.
+func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus func(string, string) error) error {
+	if entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running {
+		if requestedTop != nil {
+			return fmt.Errorf("置顶开关目前支持真机独立窗")
+		}
+		name, serial := emulatorEntryIdentity(entry)
+		if name == "" && serial == "" {
+			return fmt.Errorf("未识别模拟器窗口：%s", entry.Label)
+		}
+		return focus(name, serial)
+	}
 	if entry.Active == nil {
 		return fmt.Errorf("该条目当前没有可实时控制的设备：%s", entry.Label)
 	}
 	if entry.Active.State != "device" {
 		return fmt.Errorf("该设备当前不可实时控制：%s | %s", entry.Label, entry.Active.State)
-	}
-	if entry.Active.IsEmulator {
-		if requestedTop != nil {
-			return fmt.Errorf("置顶开关目前支持真机独立窗")
-		}
-		avdName := strings.TrimSpace(entry.Active.AVDName)
-		if avdName == "" && entry.AVD != nil {
-			avdName = strings.TrimSpace(entry.AVD.Name)
-		}
-		if avdName == "" {
-			return fmt.Errorf("未识别模拟器 AVD 名称：%s", entry.Label)
-		}
-		return focusEmulatorWindow(avdName, entry.Active.Serial)
 	}
 	title := entry.Label
 	if entry.AVD != nil && strings.TrimSpace(entry.AVD.Name) != "" {
@@ -210,60 +210,71 @@ func (a *App) openLiveMirror(entryKey string, requestedTop *bool) error {
 		title = entry.Active.AVDName
 	}
 	serial := entry.Active.Serial
-	a.mu.Lock()
-	alwaysOnTop := a.cfg.MirrorAlwaysOnTop[serial]
-	a.mu.Unlock()
+	alwaysOnTop := true
 	if requestedTop != nil {
 		alwaysOnTop = *requestedTop
 	}
 	if err := a.startScrcpySession(serial, title, alwaysOnTop); err != nil {
 		return err
 	}
-	if requestedTop != nil {
-		a.mu.Lock()
-		defer a.mu.Unlock()
-		if a.cfg.MirrorAlwaysOnTop == nil {
-			a.cfg.MirrorAlwaysOnTop = map[string]bool{}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.cfg.MirrorAlwaysOnTop == nil {
+		a.cfg.MirrorAlwaysOnTop = map[string]bool{}
+	}
+	if alwaysOnTop {
+		a.cfg.MirrorAlwaysOnTop[serial] = true
+	} else {
+		delete(a.cfg.MirrorAlwaysOnTop, serial)
+	}
+	return saveConfig(a.cfg)
+}
+
+func (a *App) GUIOpenLiveMirrors(entryKeys []string) error {
+	return openLiveMirrors(entryKeys, a.GUIOpenLiveMirror, func(keys []string) error { return a.GUITileEmulatorWindows(keys, 0) })
+}
+
+func openLiveMirrors(entryKeys []string, open func(string) error, tile func([]string) error) error {
+	if len(entryKeys) == 0 {
+		return fmt.Errorf("请先选择要打开实时镜像的设备")
+	}
+	var opened []string
+	var failures []error
+	for _, key := range normalizedUniqueNames(entryKeys) {
+		if err := open(key); err != nil {
+			failures = append(failures, fmt.Errorf("%s：%w", key, err))
+			continue
 		}
-		if alwaysOnTop {
-			a.cfg.MirrorAlwaysOnTop[serial] = true
-		} else {
-			delete(a.cfg.MirrorAlwaysOnTop, serial)
+		opened = append(opened, key)
+	}
+	var arrangementErr error
+	if len(opened) > 0 {
+		arrangementErr = tile(opened)
+	}
+	if len(failures) > 0 {
+		if arrangementErr != nil {
+			failures = append(failures, fmt.Errorf("排列已打开窗口失败：%w", arrangementErr))
 		}
-		return saveConfig(a.cfg)
+		return fmt.Errorf("已打开 %d 个实时镜像，部分操作失败：%w", len(opened), errors.Join(failures...))
+	}
+	if len(opened) == 0 {
+		return fmt.Errorf("没有打开任何实时镜像")
+	}
+	if arrangementErr != nil {
+		return fmt.Errorf("已打开 %d 个实时镜像，但排列外部窗口失败：%w", len(opened), arrangementErr)
 	}
 	return nil
 }
 
-func (a *App) GUIOpenLiveMirrors(entryKeys []string) error {
-	if len(entryKeys) == 0 {
-		return fmt.Errorf("请先选择要打开实时镜像的设备")
+func emulatorEntryIdentity(entry DeviceEntry) (name, serial string) {
+	if entry.Active != nil {
+		name = strings.TrimSpace(entry.Active.AVDName)
+		serial = entry.Active.Serial
 	}
-	seen := map[string]bool{}
-	opened := 0
-	var failures []error
-	for _, key := range entryKeys {
-		key = strings.TrimSpace(key)
-		if key == "" || seen[key] {
-			continue
-		}
-		seen[key] = true
-		if err := a.GUIOpenLiveMirror(key); err != nil {
-			failures = append(failures, fmt.Errorf("%s：%w", key, err))
-			continue
-		}
-		opened++
+	if name == "" && entry.AVD != nil {
+		name = strings.TrimSpace(entry.AVD.Name)
 	}
-	if len(failures) > 0 {
-		return fmt.Errorf("已打开 %d 个实时镜像，失败 %d 个：%w", opened, len(failures), errors.Join(failures...))
-	}
-	if opened == 0 {
-		return fmt.Errorf("没有打开任何实时镜像")
-	}
-	if err := a.GUITileEmulatorWindows(entryKeys, 0); err != nil {
-		return fmt.Errorf("已打开 %d 个实时镜像，但排列外部窗口失败：%w", opened, err)
-	}
-	return nil
+	return
 }
 
 func (a *App) GUITileEmulatorWindows(entryKeys []string, columns int) error {
@@ -287,7 +298,7 @@ func (a *App) GUITileEmulatorWindows(entryKeys []string, columns int) error {
 		if filterSelected && !selected[entry.Key] {
 			continue
 		}
-		if !entry.Running {
+		if !entry.Running && (entry.Active == nil || !entry.Active.IsEmulator) {
 			continue
 		}
 		if entry.Active != nil && !entry.Active.IsEmulator {
@@ -1105,13 +1116,30 @@ func (a *App) GUICloseDevice(key string) error {
 	if err != nil {
 		return err
 	}
-	if !ok || entry.Active == nil {
-		return fmt.Errorf("设备未连接或未启动：%s", key)
+	if !ok {
+		return fmt.Errorf("未找到设备：%s", key)
 	}
-	if !entry.Active.IsEmulator && !strings.Contains(entry.Active.Serial, ":") {
-		return fmt.Errorf("真机关机需要输入 serial 确认：%s", entry.Active.Serial)
+	return closeEmulatorEntry(entry, a.GUICloseAVD, func(serial string) error { return a.GUICloseDeviceConfirmed(serial, serial) })
+}
+
+// Non-ready AVDs use the existing process-aware close flow; no deletion occurs.
+func closeEmulatorEntry(entry DeviceEntry, closeAVD func(string) error, closeSerial func(string) error) error {
+	if entry.Active != nil && !entry.Active.IsEmulator {
+		if !strings.Contains(entry.Active.Serial, ":") {
+			return fmt.Errorf("真机关机需要输入 serial 确认：%s", entry.Active.Serial)
+		}
+		return closeSerial(entry.Active.Serial)
 	}
-	return a.GUICloseDeviceConfirmed(entry.Active.Serial, entry.Active.Serial)
+	if entry.AVD != nil && entry.Running || entry.Active != nil && entry.Active.IsEmulator {
+		name, serial := emulatorEntryIdentity(entry)
+		if name != "" {
+			return closeAVD(name)
+		}
+		if serial != "" {
+			return closeSerial(serial)
+		}
+	}
+	return fmt.Errorf("设备未连接或未启动：%s", entry.Label)
 }
 
 func (a *App) GUICloseDeviceConfirmed(serial, serialConfirmation string) error {
@@ -1126,6 +1154,11 @@ func (a *App) GUICloseDeviceConfirmed(serial, serialConfirmation string) error {
 	}
 	for _, device := range devices {
 		if device.Serial == serial {
+			if device.IsEmulator && device.State != "device" && device.AVDName != "" {
+				// lockDeviceTask already owns the AVD lock; do not call the
+				// locking public wrapper from here.
+				return a.forceCloseAVDForDelete(device.AVDName)
+			}
 			return a.closeDeviceForGUI(device, serialConfirmation)
 		}
 	}
@@ -1137,12 +1170,7 @@ func (a *App) GUICloseDevices(keys []string) error {
 	if len(keys) == 0 {
 		return fmt.Errorf("请至少选择一个运行中的模拟器")
 	}
-
-	type closeTarget struct {
-		label  string
-		serial string
-	}
-	var targets []closeTarget
+	var targets []DeviceEntry
 	for _, key := range keys {
 		entry, ok, err := a.findDeviceEntryByKey(key)
 		if err != nil {
@@ -1151,44 +1179,35 @@ func (a *App) GUICloseDevices(keys []string) error {
 		if !ok {
 			return fmt.Errorf("未找到设备：%s", key)
 		}
-		if entry.Active == nil {
-			return fmt.Errorf("设备未连接或未启动：%s", entry.Label)
+		if err := validateEmulatorCloseEntry(entry); err != nil {
+			return err
 		}
-		if !entry.Active.IsEmulator {
-			return fmt.Errorf("批量关机只支持模拟器：%s", entry.Label)
-		}
-		targets = append(targets, closeTarget{label: entry.Label, serial: entry.Active.Serial})
+		targets = append(targets, entry)
 	}
-
-	var failures []string
-	var closed []string
+	var failures []error
 	var mu sync.Mutex
-	runLimited(targets, 4, func(target closeTarget) {
-		release := a.lockDeviceTask(target.serial)
-		defer release()
-		if _, err := a.runToolOutput(toolADB, 10*time.Second, "-s", target.serial, "emu", "kill"); err != nil {
+	runLimited(targets, 4, func(entry DeviceEntry) {
+		err := closeEmulatorEntry(entry, a.GUICloseAVD, func(serial string) error { return a.GUICloseDeviceConfirmed(serial, serial) })
+		if err != nil {
 			mu.Lock()
-			failures = append(failures, fmt.Sprintf("%s：%v", target.label, err))
+			failures = append(failures, fmt.Errorf("%s：%w", entry.Label, err))
 			mu.Unlock()
-			return
 		}
-		if err := a.waitForSerialGone(target.serial, 20*time.Second); err != nil {
-			mu.Lock()
-			failures = append(failures, fmt.Sprintf("%s：%v", target.label, err))
-			mu.Unlock()
-			return
-		}
-		mu.Lock()
-		closed = append(closed, target.serial)
-		mu.Unlock()
 	})
-	for _, serial := range closed {
-		a.clearCurrentDeviceIf(serial)
-	}
 	if len(failures) > 0 {
-		return fmt.Errorf("批量关机部分失败：\n%s", strings.Join(failures, "\n"))
+		return fmt.Errorf("批量关机部分失败：%w", errors.Join(failures...))
 	}
 	return nil
+}
+
+func validateEmulatorCloseEntry(entry DeviceEntry) error {
+	if entry.Active != nil && !entry.Active.IsEmulator {
+		return fmt.Errorf("批量关机只支持模拟器：%s", entry.Label)
+	}
+	if entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running {
+		return nil
+	}
+	return fmt.Errorf("模拟器未启动：%s", entry.Label)
 }
 
 func (a *App) GUICloseAVD(name string) error {

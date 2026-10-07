@@ -39,7 +39,10 @@ func TestDeviceWallPreservesSessionAcrossScanSelectionAndDensity(t *testing.T) {
 	g.controlRealtimeStops["one"] = func() { stopped++ }
 	card.realtime = true
 	g.controlSelected["one"] = true
-	g.controlDensity = controlDensityHD
+	g.setControlDensity(controlDensityHD)
+	if g.app.Preferences().String("wall.density") != controlDensityHD {
+		t.Fatal("density not remembered")
+	}
 	g.entries[0].Label = "renamed"
 	g.renderControlCenter()
 	if g.controlCards["one"] != card || card.wall.object != object || stopped != 0 || !card.realtime {

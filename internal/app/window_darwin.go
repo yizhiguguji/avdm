@@ -11,6 +11,7 @@ package app
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <math.h>
 
 static char* adm_strdup(const char* value) {
 	if (value == NULL) {
@@ -289,17 +290,17 @@ static int copy_current_app_largest_window_frame(CGRect* frame) {
 
 static CGRect adm_device_wall_work_area(CGRect bounds, CGRect appFrame, int cols) {
 	CGFloat margin = 6.0;
-	CGFloat leftInset = 76.0;
-	CGFloat rightInset = 350.0;
-	CGFloat topInset = 122.0;
-	CGFloat bottomInset = 112.0;
+	CGFloat leftInset = 16.0;
+	CGFloat rightInset = 16.0;
+	CGFloat topInset = 100.0;
+	CGFloat bottomInset = 56.0;
 	CGRect area = CGRectMake(
 		appFrame.origin.x + leftInset,
 		appFrame.origin.y + topInset,
 		appFrame.size.width - leftInset - rightInset,
 		appFrame.size.height - topInset - bottomInset
 	);
-	CGFloat minUsefulW = 260.0 * cols + margin * (cols - 1);
+	CGFloat minUsefulW = 288.0 * cols + margin * (cols - 1);
 	if (area.size.width >= minUsefulW && area.size.height >= 360.0) {
 		return area;
 	}
@@ -311,54 +312,6 @@ static CGRect adm_device_wall_work_area(CGRect bounds, CGRect appFrame, int cols
 	);
 }
 
-static int adm_auto_tile_columns(int matched, CGRect workArea, CGFloat margin, CGFloat aspect, CGFloat targetW, CGFloat minW, CGFloat sideChromeW) {
-	if (matched <= 1) {
-		return 1;
-	}
-	int bestCols = 1;
-	CGFloat bestScore = -1000000.0;
-	int bestRows = matched;
-	for (int candidate = 1; candidate <= matched; candidate++) {
-		int rows = matched / candidate;
-		if (matched % candidate != 0) {
-			rows++;
-		}
-		CGFloat cellW = workArea.size.width / candidate;
-		CGFloat cellH = workArea.size.height / rows;
-		CGFloat mainWindowW = targetW;
-		CGFloat combinedW = mainWindowW + sideChromeW;
-		CGFloat maxCombinedW = cellW - margin;
-		if (combinedW > maxCombinedW) {
-			mainWindowW = maxCombinedW - sideChromeW;
-			combinedW = maxCombinedW;
-		}
-		if (mainWindowW < 1.0) {
-			mainWindowW = maxCombinedW;
-			combinedW = mainWindowW;
-		}
-		CGFloat windowH = mainWindowW * aspect;
-		CGFloat maxCellH = cellH - margin;
-		if (windowH > maxCellH) {
-			windowH = maxCellH;
-			mainWindowW = windowH / aspect;
-			combinedW = mainWindowW + sideChromeW;
-		}
-		if (mainWindowW < minW || windowH < 360.0) {
-			continue;
-		}
-		CGFloat widthPenalty = targetW - mainWindowW;
-		if (widthPenalty < 0) {
-			widthPenalty = -widthPenalty;
-		}
-		CGFloat score = -widthPenalty - rows * 2.0 + candidate * 0.2;
-		if (score > bestScore || (score == bestScore && rows < bestRows)) {
-			bestScore = score;
-			bestRows = rows;
-			bestCols = candidate;
-		}
-	}
-	return bestCols;
-}
 
 static void activate_ax_window(AXUIElementRef win) {
 	if (win == NULL) {
@@ -424,6 +377,76 @@ char* adm_ax_focus_window_for_pid(int pid) {
 	return adm_strdup("ok");
 }
 
+// AX updates are delivered to another process asynchronously. A successful
+// setter alone does not prove that process accepted the requested outer size.
+static int set_ax_window_size_verified(AXUIElementRef win, CGSize requested, CGRect* actual, AXError* lastError) {
+ *actual = CGRectZero;
+ copy_ax_window_frame(win,actual);
+ *lastError = kAXErrorSuccess;
+ if (requested.width<1.0 || requested.height<1.0) {*lastError=kAXErrorIllegalArgument;return 1;}
+ for (int attempt = 0; attempt < 3; attempt++) {
+  AXValueRef value = AXValueCreate(kAXValueCGSizeType, &requested);
+  if (value == NULL) { return 1; }
+  *lastError = AXUIElementSetAttributeValue(win, kAXSizeAttribute, value);
+  CFRelease(value);
+  if (*lastError != kAXErrorSuccess) { return 1; }
+  int matching = 0;
+  for (int poll = 0; poll < 12; poll++) {
+   usleep(30000);
+   if (copy_ax_window_frame(win, actual)) {
+    if (fabs(actual->size.width - requested.width) <= 2.0 && fabs(actual->size.height - requested.height) <= 2.0) {
+     matching++;
+     if (matching >= 2) { return 0; }
+    } else { matching = 0; }
+   }
+  }
+ }
+ return actual->size.width > 0.0 ? 2 : 3;
+}
+
+static int set_ax_window_position_verified(AXUIElementRef win, CGPoint requested, CGRect* actual, AXError* lastError) {
+ *lastError = kAXErrorSuccess;
+ for (int attempt = 0; attempt < 3; attempt++) {
+  AXValueRef value = AXValueCreate(kAXValueCGPointType, &requested);
+  if (value == NULL) { return 1; }
+  *lastError = AXUIElementSetAttributeValue(win, kAXPositionAttribute, value);
+  CFRelease(value);
+  if (*lastError != kAXErrorSuccess) { return 1; }
+  int matching = 0;
+  for (int poll = 0; poll < 8; poll++) {
+   usleep(20000);
+   if (copy_ax_window_frame(win, actual)) {
+    if (fabs(actual->origin.x-requested.x)<=2.0 && fabs(actual->origin.y-requested.y)<=2.0) {
+     matching++;
+     if (matching>=2) { return 0; }
+    } else { matching=0; }
+   }
+  }
+ }
+ return 2;
+}
+
+static CGSize adm_uniform_tile_size(double availableW, double availableH, int cols, int rows, double auxiliaryW) {
+ if (cols<1) {cols=1;} if (rows<1) {rows=1;}
+ double maxW=availableW/cols-6.0-auxiliaryW;
+ double maxH=availableH/rows-6.0;
+ double scale=fmin(1.0,fmin(maxW/288.0,maxH/624.0));
+ if (scale<=0.0) { return CGSizeZero; }
+ return CGSizeMake(floor(288.0*scale), floor(624.0*scale));
+}
+
+char* adm_ax_read_window_frame_for_pid(int pid, double* x, double* y, double* width, double* height) {
+ if (!AXIsProcessTrusted()) {return adm_strdup("permission");}
+ AXUIElementRef win=copy_window_for_pid((pid_t)pid);
+ if (win==NULL) {return adm_strdup("not-found");}
+ CGRect frame=CGRectZero;
+ int found=copy_ax_window_frame(win,&frame);
+ CFRelease(win);
+ if (!found) {return adm_strdup("frame-unavailable");}
+ *x=frame.origin.x;*y=frame.origin.y;*width=frame.size.width;*height=frame.size.height;
+ return adm_strdup("ok");
+}
+
 char* adm_ax_resize_window_for_pid(int pid, double width, double height) {
 	int trustState = adm_ax_trust_state();
 	if (trustState == 2) {
@@ -439,21 +462,18 @@ char* adm_ax_resize_window_for_pid(int pid, double width, double height) {
 	if (win == NULL) {
 		return adm_strdup("not-found");
 	}
-	CGSize size = CGSizeMake(width, height);
-	AXValueRef sizeValue = AXValueCreate(kAXValueCGSizeType, &size);
-	if (sizeValue == NULL) {
-		CFRelease(win);
-		return adm_strdup("alloc-failed");
-	}
-	activate_ax_window(win);
-	AXError sizeErr = AXUIElementSetAttributeValue(win, kAXSizeAttribute, sizeValue);
-	CFRelease(sizeValue);
-	AXUIElementPerformAction(win, kAXRaiseAction);
-	CFRelease(win);
-	if (sizeErr != kAXErrorSuccess) {
-		return adm_strdup("resize-failed");
-	}
-	return adm_strdup("ok");
+ CGSize size=CGSizeMake(width,height);
+ activate_ax_window(win);
+ CGRect actual=CGRectZero;AXError sizeErr=kAXErrorSuccess;
+ int resized=set_ax_window_size_verified(win,size,&actual,&sizeErr);
+ AXUIElementPerformAction(win,kAXRaiseAction);
+ CFRelease(win);
+ if (resized!=0) {
+  char message[256];
+  snprintf(message,sizeof(message),"resize-unverified requested=%.0fx%.0f actual=%.0fx%.0f ax=%d",width,height,actual.size.width,actual.size.height,(int)sizeErr);
+  return adm_strdup(message);
+ }
+ return adm_strdup("ok");
 }
 
 static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requestedCols) {
@@ -464,12 +484,13 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 	CGRect bounds = CGDisplayBounds(CGMainDisplayID());
 	CGFloat margin = 6.0;
 	CGFloat horizontalGap = 6.0;
-	CGFloat targetWindowW = 256.0;
-	CGFloat targetWindowH = 600.0;
-	CGFloat visibleWindowW = 256.0;
+	CGFloat targetWindowW = 288.0;
+	CGFloat targetWindowH = 624.0;
+	CGFloat visibleWindowW = 288.0;
 	// Android Emulator exposes the side toolbar as a sibling AX window.
 	CGFloat sideChromeW = 61.0;
-	int* hasToolbar = calloc((size_t)matched, sizeof(int));
+	CGFloat maxToolbarW = 0.0;
+ int* hasToolbar = calloc((size_t)matched, sizeof(int));
 	if (hasToolbar == NULL) {
 		for (int i = 0; i < matched; i++) {
 			CFRelease(windows[i]);
@@ -480,6 +501,7 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 		AXUIElementRef toolbar = copy_toolbar_for_main_window(windows[i]);
 		if (toolbar != NULL) {
 			hasToolbar[i] = 1;
+ maxToolbarW=sideChromeW;
 			CFRelease(toolbar);
 		}
 	}
@@ -548,12 +570,11 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 	}
 	CGFloat usableW = workArea.size.width;
 	CGFloat usableH = workArea.size.height;
-	CGFloat cellW = usableW / cols;
 	CGFloat cellH = usableH / rows;
-	if (rows > 1 && cellH < targetWindowH + margin) {
-		cellH = targetWindowH + margin;
-	}
-	CGFloat maxCombinedW = cellW - margin;
+
+	CGSize uniformSize=adm_uniform_tile_size(usableW,usableH,cols,rows,maxToolbarW);
+ targetWindowW=uniformSize.width;targetWindowH=uniformSize.height;
+ char diagnostics[512]="";
 	CGFloat* rowNextX = calloc((size_t)matched, sizeof(CGFloat));
 	CGFloat* rowY = calloc((size_t)matched, sizeof(CGFloat));
 	CGFloat* rowHeights = calloc((size_t)matched, sizeof(CGFloat));
@@ -583,38 +604,25 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 
 	for (int i = 0; i < matched; i++) {
 		int row = i / cols;
-		CGFloat windowW = targetWindowW;
-		CGFloat windowH = targetWindowH;
-		if (windowW + sideChromeW > maxCombinedW) {
-			windowW = maxCombinedW - sideChromeW;
-			if (windowW < 1.0) {
-				windowW = maxCombinedW;
-			}
-		}
-		CGFloat maxCellH = cellH - margin;
-		if (windowH > maxCellH) {
-			windowH = maxCellH;
-		}
-		CGFloat cellX = rowNextX[row];
-		CGFloat cellY = workArea.origin.y + row * cellH;
-		CGPoint position = CGPointMake(cellX, cellY);
-		CGSize size = CGSizeMake(windowW, windowH);
-		AXValueRef positionValue = AXValueCreate(kAXValueCGPointType, &position);
-		AXValueRef sizeValue = AXValueCreate(kAXValueCGSizeType, &size);
-		activate_ax_window(windows[i]);
-		if (positionValue != NULL) {
-			AXUIElementSetAttributeValue(windows[i], kAXPositionAttribute, positionValue);
-			CFRelease(positionValue);
-		}
-		if (sizeValue != NULL) {
-			AXUIElementSetAttributeValue(windows[i], kAXSizeAttribute, sizeValue);
-			CFRelease(sizeValue);
-		}
+ CGFloat windowW=targetWindowW;CGFloat windowH=targetWindowH;
+  CGFloat cellX=rowNextX[row];CGFloat cellY=workArea.origin.y+row*cellH;
+  CGPoint position=CGPointMake(cellX,cellY);CGSize size=CGSizeMake(windowW,windowH);
+  activate_ax_window(windows[i]);
+  CGRect actual=CGRectZero;AXError sizeError=kAXErrorSuccess;
+  int resized=set_ax_window_size_verified(windows[i],size,&actual,&sizeError);
+  if (resized!=0 && diagnostics[0]=='\0') {
+   snprintf(diagnostics,sizeof(diagnostics),"resize-unverified index=%d requested=%.0fx%.0f actual=%.0fx%.0f ax=%d",i,windowW,windowH,actual.size.width,actual.size.height,(int)sizeError);
+  }
+  AXError positionError=kAXErrorSuccess;
+  if (set_ax_window_position_verified(windows[i],position,&actual,&positionError)!=0 && diagnostics[0]=='\0') {
+   snprintf(diagnostics,sizeof(diagnostics),"position-unverified index=%d ax=%d",i,(int)positionError);
+  }
+
 		AXUIElementRef toolbar = copy_toolbar_for_main_window(windows[i]);
 		if (toolbar != NULL) {
 			toolbarWidths[i] = sideChromeW;
 			CGPoint toolbarPosition = CGPointMake(
-				cellX + visibleWindowW,
+				cellX + actual.size.width,
 				cellY + 28.0
 			);
 			AXValueRef toolbarPositionValue = AXValueCreate(kAXValueCGPointType, &toolbarPosition);
@@ -686,27 +694,29 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 		CGFloat finalY = rowY[row];
 		CGFloat finalMainW = itemWidths[i] - toolbarWidths[i];
 		CGPoint finalPosition = CGPointMake(finalX, finalY);
-		AXValueRef finalPositionValue = AXValueCreate(kAXValueCGPointType, &finalPosition);
-		if (finalPositionValue != NULL) {
-			AXUIElementSetAttributeValue(windows[i], kAXPositionAttribute, finalPositionValue);
-			CFRelease(finalPositionValue);
-		}
+ CGRect positionedFrame=CGRectZero;AXError positionError=kAXErrorSuccess;
+  if (set_ax_window_position_verified(windows[i],finalPosition,&positionedFrame,&positionError)!=0 && diagnostics[0]=='\0') {
+   snprintf(diagnostics,sizeof(diagnostics),"position-unverified index=%d ax=%d",i,(int)positionError);
+  }
+
 		CGRect finalFrame = CGRectZero;
 		if (copy_ax_window_frame(windows[i], &finalFrame) && finalFrame.size.width > 1.0) {
 			finalX = finalFrame.origin.x;
 			finalY = finalFrame.origin.y;
 			finalMainW = finalFrame.size.width;
+   if ((fabs(finalFrame.size.width-targetWindowW)>2.0 || fabs(finalFrame.size.height-targetWindowH)>2.0) && diagnostics[0]=='\0') {
+    snprintf(diagnostics,sizeof(diagnostics),"resize-unverified index=%d requested=%.0fx%.0f actual=%.0fx%.0f",i,targetWindowW,targetWindowH,finalFrame.size.width,finalFrame.size.height);
+   }
 		}
 		if (toolbars[i] != NULL) {
 			CGPoint finalToolbarPosition = CGPointMake(
 				finalX + finalMainW,
 				finalY + 28.0
 			);
-			AXValueRef finalToolbarPositionValue = AXValueCreate(kAXValueCGPointType, &finalToolbarPosition);
-			if (finalToolbarPositionValue != NULL) {
-				AXUIElementSetAttributeValue(toolbars[i], kAXPositionAttribute, finalToolbarPositionValue);
-				CFRelease(finalToolbarPositionValue);
-			}
+ CGRect toolbarFrame=CGRectZero;AXError toolbarError=kAXErrorSuccess;
+   if (set_ax_window_position_verified(toolbars[i],finalToolbarPosition,&toolbarFrame,&toolbarError)!=0 && diagnostics[0]=='\0') {
+    snprintf(diagnostics,sizeof(diagnostics),"toolbar-position-unverified index=%d ax=%d",i,(int)toolbarError);
+   }
 		}
 		rowNextX[row] = finalX + finalMainW + toolbarWidths[i] + horizontalGap;
 	}
@@ -727,7 +737,7 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 	free(toolbars);
 	free(toolbarWidths);
 	free(hasToolbar);
-	return adm_strdup("ok");
+ return adm_strdup(diagnostics[0] ? diagnostics : "ok");
 }
 
 char* adm_ax_tile_windows(const char** avds, const char** serials, int count, int requestedCols) {
@@ -1027,4 +1037,26 @@ func commandLineHasAVD(fields []string, avdName string) bool {
 		}
 	}
 	return false
+}
+
+// ExternalWindowFrame is the actual AX outer frame in macOS display coordinates.
+type ExternalWindowFrame struct{ X, Y, Width, Height float64 }
+
+func ReadProcessWindowFrame(pid int) (ExternalWindowFrame, error) {
+	var x, y, width, height C.double
+	result := C.adm_ax_read_window_frame_for_pid(C.int(pid), &x, &y, &width, &height)
+	defer C.free(unsafe.Pointer(result))
+	status := C.GoString(result)
+	if status == "permission" {
+		return ExternalWindowFrame{}, &AccessibilityPermissionRequiredError{Operation: "读取外部窗口尺寸"}
+	}
+	if status != "ok" {
+		return ExternalWindowFrame{}, fmt.Errorf("读取外部窗口尺寸失败（pid=%d）：%s", pid, status)
+	}
+	return ExternalWindowFrame{X: float64(x), Y: float64(y), Width: float64(width), Height: float64(height)}, nil
+}
+
+func uniformExternalTileSize(width, height float64, cols, rows int, auxiliaryWidth float64) (float64, float64) {
+	size := C.adm_uniform_tile_size(C.double(width), C.double(height), C.int(cols), C.int(rows), C.double(auxiliaryWidth))
+	return float64(size.width), float64(size.height)
 }
