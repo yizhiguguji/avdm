@@ -160,12 +160,22 @@ type GUIApp struct {
 	toolSummary           *widget.Label
 	busyLabel             *widget.Label
 	progress              *widget.Activity
-	logLabel              *widget.Label
+	logLabel              *selectableLog
 	logScroll             *container.Scroll
 	logFollow             bool
+	logPaused             bool
+	logHint               *widget.Label
 	logProgrammaticScroll bool
 	logLines              []string
 
+	wallWorkspace        *fyne.Container
+	wallLibraryGrid      *fyne.Container
+	wallOnlineLabel      *widget.Label
+	wallLibraryButton    *widget.Button
+	wallWorkspaceWidth   float32
+	wallOnlineCount      int
+	wallLibraryCount     int
+	libraryCollapsed     bool
 	controlWindow        fyne.Window
 	controlGrid          *fyne.Container
 	controlSummary       *widget.Label
@@ -304,9 +314,14 @@ func (g *GUIApp) build() {
 	g.progress = widget.NewActivity()
 	g.progress.Hide()
 
-	g.logLabel = widget.NewLabel("")
-	g.logLabel.Wrapping = fyne.TextWrapBreak
-	g.logLabel.TextStyle = fyne.TextStyle{Monospace: true}
+	g.logLabel = newSelectableLog()
+	g.logLabel.onFocus = func() {
+		g.logPaused = true
+		g.logFollow = false
+		if g.logHint != nil {
+			g.logHint.SetText("已暂停显示更新 · 可选择复制，点击跟随最新恢复")
+		}
+	}
 	g.logFollow = true
 
 	topBar := g.buildTopBar()
@@ -735,15 +750,35 @@ func rightToolPanel(content fyne.CanvasObject) fyne.CanvasObject {
 func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 	clearButton := widget.NewButton("清空日志", func() {
 		g.logLines = nil
+		g.logPaused = false
+		if g.logHint != nil {
+			g.logHint.SetText("最近 200 行 · 拖选或 ⌘A / ⌘C")
+		}
+		g.logLabel.SetText("")
 		g.renderLogLines()
 		g.logFollow = true
 		g.scrollLogToBottom()
 	})
 	clearButton.Importance = widget.MediumImportance
-	copyButton := widget.NewButton("复制日志", func() {
+	copyButton := widget.NewButton("复制全部", func() {
 		g.app.Clipboard().SetContent(strings.Join(g.logLines, "\n"))
 	})
 	copyButton.Importance = widget.MediumImportance
+	copySelection := widget.NewButton("复制选中", func() {
+		if text := g.logLabel.SelectedText(); text != "" {
+			g.app.Clipboard().SetContent(text)
+		}
+	})
+	followButton := widget.NewButton("跟随最新", func() {
+		if canvas := g.app.Driver().CanvasForObject(g.logLabel); canvas != nil {
+			canvas.Unfocus()
+		}
+		g.logPaused = false
+		g.renderLogLines()
+		g.logLabel.Entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyRight})
+		g.logHint.SetText("最近 200 行 · 拖选或 ⌘A / ⌘C")
+		g.scrollLogToBottom()
+	})
 	g.logScroll = container.NewScroll(g.logLabel)
 	g.logScroll.OnScrolled = func(_ fyne.Position) {
 		if g.logProgrammaticScroll {
@@ -753,7 +788,8 @@ func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 	}
 	// Collapse is driven by the log icon in the right rail; the header keeps
 	// only the clear/copy actions.
-	header := container.NewBorder(nil, nil, container.NewVBox(sectionTitle("任务/日志"), mutedText("最近 200 行，可复制")), container.NewHBox(clearButton, copyButton), nil)
+	g.logHint = widget.NewLabel("最近 200 行 · 拖选或 ⌘A / ⌘C")
+	header := container.NewBorder(nil, nil, container.NewVBox(sectionTitle("任务/日志"), g.logHint), container.NewHBox(followButton, clearButton, copySelection, copyButton), nil)
 	return panelSurface("", "", container.NewBorder(
 		header, nil, nil, nil, g.logScroll,
 	))
@@ -802,7 +838,17 @@ func (g *GUIApp) applyState(state core.GUIState, revealTop bool) {
 	g.lastAPKSource = state.LastAPKSource
 	g.mirrorAlwaysOnTop = state.MirrorAlwaysOnTop
 	g.currentLabel.SetText("主目标：" + state.CurrentDevice)
-	g.toolSummary.SetText("工具：" + compactToolStatus(state.Tools))
+	missing := 0
+	for _, tool := range state.Tools {
+		if !tool.Available {
+			missing++
+		}
+	}
+	if missing == 0 {
+		g.toolSummary.SetText("工具：已就绪")
+	} else {
+		g.toolSummary.SetText(fmt.Sprintf("工具：%d 项待处理", missing))
+	}
 	g.toolDetails = detailedToolStatus(state.Tools)
 	g.toolStatuses = append([]core.ToolStatus(nil), state.Tools...)
 	if g.apkEntry != nil && strings.TrimSpace(g.apkEntry.Text) == "" {
@@ -1064,7 +1110,7 @@ func (g *GUIApp) appendLog(level, format string, args ...any) {
 		g.logLines = g.logLines[len(g.logLines)-maxLogLines:]
 	}
 	g.renderLogLines()
-	if follow {
+	if follow && !g.logPaused {
 		g.logFollow = true
 		g.scrollLogToBottom()
 	}
@@ -1087,6 +1133,9 @@ func (g *GUIApp) copyableControlText(content fyne.CanvasObject, label, value str
 
 func (g *GUIApp) renderLogLines() {
 	if g.logLabel == nil {
+		return
+	}
+	if g.logPaused {
 		return
 	}
 	g.logLabel.SetText(strings.Join(g.logLines, "\n"))

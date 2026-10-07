@@ -296,7 +296,7 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		objects[i] = button
 	}
 	toolbar := container.New(workbenchToolbarLayout{}, objects...)
-	panel := panelSurface("", "", container.NewBorder(toolbar, nil, nil, nil, container.NewScroll(g.controlGrid)))
+	panel := panelSurface("", "", container.NewBorder(toolbar, nil, nil, nil, g.buildWallWorkspace()))
 	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, panel)
 }
 

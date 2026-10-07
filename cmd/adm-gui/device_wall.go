@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"fmt"
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"image"
@@ -76,22 +76,15 @@ func (g *GUIApp) renderControlCenter() {
 		}
 		cards = append(cards, card.wall.object)
 	}
-	var sections []fyne.CanvasObject
-	if len(cards) > 0 {
-		sections = append(sections, container.New(layout.NewGridWrapLayout(spec.cardSize), cards...))
-	}
-	if len(rows) > 0 {
-		sections = append(sections, container.NewVBox(rows...))
-	}
-	if len(sections) == 0 {
+	g.updateWallWorkspace(cards, rows)
+	if len(cards) == 0 && len(rows) == 0 {
 		if len(g.entries) == 0 {
-			sections = append(sections, emptyDeviceWall(g))
+			g.controlGrid.Objects = []fyne.CanvasObject{emptyDeviceWall(g)}
 		} else {
-			sections = append(sections, widget.NewLabel("没有符合筛选条件的设备"))
+			g.controlGrid.Objects = []fyne.CanvasObject{widget.NewLabel("没有符合筛选条件的设备")}
 		}
+		g.controlGrid.Refresh()
 	}
-	g.controlGrid.Objects = sections
-	g.controlGrid.Refresh()
 	g.refreshControlScreensAsync()
 	g.probeControlRealtimeAsync()
 }
@@ -185,8 +178,12 @@ func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObjec
 	}
 	title := widget.NewLabelWithStyle(controlCardTitle(entry), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	title.Truncation = fyne.TextTruncateEllipsis
-	status := widget.NewLabel(controlCardStatus(entry))
-	status.Truncation = fyne.TextTruncateEllipsis
+	state := entryStatus(entry)
+	if entry.Running && entry.Active == nil {
+		state = "启动中，等待连接"
+	}
+	status := canvas.NewText(state, admColorMuted)
+	status.TextSize = 13
 	manage := compactButton("管理", func() { g.showControlDeviceManageDialog(entry) })
 	actions := container.NewHBox(manage)
 	if entry.AVD != nil && !entry.Running {
@@ -200,7 +197,7 @@ func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObjec
 		close.Importance = widget.WarningImportance
 		actions.Add(close)
 	}
-	return compactSurface(container.NewBorder(nil, nil, selected, actions, container.NewVBox(title, status)))
+	return compactSurface(container.NewBorder(nil, nil, selected, container.NewCenter(actions), container.NewVBox(title, container.NewPadded(status))))
 }
 
 func (g *GUIApp) findEntryByKey(key string) (core.DeviceEntry, bool) {
