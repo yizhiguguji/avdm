@@ -28,9 +28,9 @@ const (
 
 var (
 	dockHandleColor      = color.NRGBA{R: 15, G: 23, B: 42, A: 0}
-	dockHandleHoverColor = color.NRGBA{R: 45, G: 212, B: 191, A: 90}
-	dockGripColor        = color.NRGBA{R: 71, G: 85, B: 105, A: 255}
-	dockGripHoverColor   = color.NRGBA{R: 45, G: 212, B: 191, A: 255}
+	dockHandleHoverColor = color.NRGBA{R: 49, G: 112, B: 211, A: 50}
+	dockGripColor        = admColorBorder
+	dockGripHoverColor   = admColorPrimary
 )
 
 // setPaneCollapsed toggles a docked pane between its full panel and its
@@ -366,9 +366,10 @@ func (r *resizeHandleRenderer) Objects() []fyne.CanvasObject {
 // Standard labeled buttons provide Fyne focus traversal and keyboard activation.
 // Text alone fits the narrow rail; the resource remains accepted for callers
 // that identify the corresponding action icon.
-func newWorkbenchRailButton(label string, _ fyne.Resource, onTap func()) *widget.Button {
+func newWorkbenchRailButton(label string, resource fyne.Resource, onTap func()) *widget.Button {
 	button := widget.NewButton(label, onTap)
 	button.Importance = widget.LowImportance
+	button.SetIcon(resource)
 	return button
 }
 
@@ -377,7 +378,7 @@ func setWorkbenchToolActive(button *widget.Button, active bool) {
 		return
 	}
 	if active {
-		button.Importance = widget.HighImportance
+		button.Importance = widget.MediumImportance
 	} else {
 		button.Importance = widget.LowImportance
 	}

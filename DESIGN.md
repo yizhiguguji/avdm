@@ -34,7 +34,7 @@
 - Tradeoffs: Dense operational UI is preferred over decorative whitespace; clarity is preferred over clever labels.
 
 ## Visual language
-- Color: Dark operational base; blue for primary actions, green for healthy state, red only for destructive actions.
+- Color: Light neutral gray app background and white surfaces; blue for primary actions and focus, green for healthy state, red for destructive actions. Previews retain a dark background.
 - Typography: Compact hierarchy; bold device names, muted metadata, badge-like states; no oversized headings inside tool surfaces.
 - Spacing/layout rhythm: Tight but readable, with consistent row heights, compact toolbars, and no empty placeholder columns.
 - Shape/radius/elevation: 6-8px radius, low contrast borders, no nested card stacks.
@@ -43,7 +43,7 @@
 
 ## Components
 - Existing components to reuse: Fyne `widget.List`, `widget.Button`, `widget.Select`, `widget.Card`, `container.Border`, split containers.
-- New/changed components: Operational dark theme, device row, device wall card, black preview pane, status badge, compact action toolbar, collapsible log/task panel.
+- New/changed components: Light neutral theme, device row, device wall card, black preview pane, status badge, compact action toolbar, collapsible log/task panel.
 - Variants and states: available, current, offline, unauthorized, running-but-not-ready, stopped, busy, error.
 - Token/component ownership: Device wall/session lifecycle in `device_wall.go` and `wall_state.go`; toolbar and selection planning in `workbench_toolbar.go`; application tools in `application_panels.go`; task results in `batch_tasks.go`.
 
@@ -74,7 +74,7 @@
 
 ## Implementation constraints
 - Framework/styling system: Go + Fyne; avoid large framework rewrites in this repo.
-- Design-token constraints: Fyne theming is limited; use the 安卓设备矩阵 dark theme and repo-local surface helpers before adding custom drawing.
+- Design-token constraints: Fyne theming is limited; use the 安卓设备矩阵 light neutral theme and repo-local surface helpers before adding custom drawing.
 - Performance constraints: Avoid global adb screenshot storms; keep refresh scoped and paced; do not discard existing preview frames while a device list refresh is in progress.
 - Compatibility constraints: macOS Accessibility-dependent window movement is not a primary flow.
 - Test/screenshot expectations: Run `go test ./...`, `make build`, launch app, and screenshot major surfaces after visual changes.
@@ -119,3 +119,11 @@
 日志采用可选择的只读文本，支持鼠标拖选、全选、快捷键复制、右键复制，以及「复制选中」「复制全部」。选择时暂停显示更新，后台日志继续收集；点击「跟随最新」恢复显示和滚动，防止新日志覆盖选区。
 
 验证：布局几何、设备库分区、预览复用、日志只读/复制/选区快照测试通过；完整 race 和 vet 通过。已在本机常规窗口、大窗口、安装面板展开及日志展开状态验收；日志全选复制和拒绝键入已实测。新版已签名编译并备份替换。
+
+### 视觉重整与本机自查（2026-10-07）
+
+统一浅灰底、白色面板、深色正文与灰色辅助文字，移除深蓝大块背景和卡片双层粗边框。普通工具按钮使用低强调样式，蓝色用于主要执行操作与焦点；右侧工具配文字和图标。卡片保留单层细边框，截图时间和工具状态减弱到辅助层级。
+
+设备库宽度收至 300px，条目采用分隔线与短状态，管理和启动按钮保持相邻。大窗口工作区最大宽度 1600px，预览高度上限 760px；按窗口、日志和工具面板实际占用空间调整，避免手机无限放大。
+
+本机已检查常规窗口、大窗口、视图对话框、安装面板和日志展开。日志拖选的蓝色选区、暂停更新提示与快捷键复制正常。完整 race、vet、编译及签名验证通过，新版已备份替换本机应用。

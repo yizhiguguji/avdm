@@ -123,7 +123,7 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 			g.swipeDevicePreview(key, serial, start, end, size, img)
 		}
 	}
-	independent := compactButton("独立窗", func() { g.openIndependentDeviceWindow(key, card.entry.Label) })
+	independent := compactButton("窗口", func() { g.openIndependentDeviceWindow(key, card.entry.Label) })
 	home := compactButton("主页", func() { g.keyEventDevice(serial, "主页", 3) })
 	back := compactButton("返回", func() { g.keyEventDevice(serial, "返回", 4) })
 	manage := compactButton("管理", func() { g.showControlDeviceManageDialog(card.entry) })
@@ -155,7 +155,7 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 	card.wall.previewBox = container.NewGridWrap(spec.previewSize, previewInteractiveObject(preview))
 	header := container.NewBorder(nil, nil, selected, more, title)
 	actions := container.NewGridWithColumns(4, independent, home, back, manage)
-	card.wall.object = controlCardSurface(container.NewVBox(header, container.NewCenter(card.wall.previewBox), status, actions))
+	card.wall.object = controlCardSurface(container.NewVBox(header, container.NewCenter(card.wall.previewBox), container.NewThemeOverride(status, captionTheme{g.app.Settings().Theme()}), actions))
 	return card.wall.object
 }
 
@@ -189,7 +189,7 @@ func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObjec
 	if entry.AVD != nil && !entry.Running {
 		name := entry.AVD.Name
 		start := compactButton("启动", func() { g.runAction("启动模拟器 "+name, func() error { return g.backend.GUIStartAVD(name) }) })
-		start.Importance = widget.HighImportance
+		start.Importance = widget.LowImportance
 		g.prepareActionButton(start)
 		actions.Add(start)
 	} else if entry.Running || entry.Active != nil {
@@ -197,7 +197,7 @@ func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObjec
 		close.Importance = widget.WarningImportance
 		actions.Add(close)
 	}
-	return compactSurface(container.NewBorder(nil, nil, selected, container.NewCenter(actions), container.NewVBox(title, container.NewPadded(status))))
+	return container.NewBorder(nil, canvas.NewLine(admColorBorder), selected, container.NewCenter(actions), container.NewVBox(title, status))
 }
 
 func (g *GUIApp) findEntryByKey(key string) (core.DeviceEntry, bool) {

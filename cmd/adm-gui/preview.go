@@ -14,6 +14,7 @@ type previewPane struct {
 	bg             *canvas.Rectangle
 	img            *canvas.Image
 	message        *widget.Label
+	messageView    fyne.CanvasObject
 	messageIcon    *canvas.Text
 	minSize        fyne.Size
 	imageWidth     int
@@ -49,12 +50,13 @@ func newPreviewPane(message string, minSize fyne.Size) *previewPane {
 		bg:          canvas.NewRectangle(admColorPreviewBG),
 		img:         canvas.NewImageFromImage(nil),
 		message:     widget.NewLabel(message),
-		messageIcon: canvas.NewText("", admColorText),
+		messageIcon: canvas.NewText("", color.White),
 		minSize:     minSize,
 	}
 	p.img.FillMode = canvas.ImageFillContain
 	p.img.ScaleMode = canvas.ImageScaleSmooth
 	p.message.Alignment = fyne.TextAlignCenter
+	p.messageView = container.NewThemeOverride(p.message, previewMessageTheme{fyne.CurrentApp().Settings().Theme()})
 	p.messageIcon.TextSize = 38
 	p.messageIcon.Hide()
 	p.ExtendBaseWidget(p)
@@ -154,7 +156,7 @@ func previewInteractiveObject(preview *previewPane) fyne.CanvasObject {
 func (p *previewPane) CreateRenderer() fyne.WidgetRenderer {
 	return &previewPaneRenderer{
 		pane:    p,
-		objects: []fyne.CanvasObject{p.bg, p.img, p.message, p.messageIcon},
+		objects: []fyne.CanvasObject{p.bg, p.img, p.messageView, p.messageIcon},
 	}
 }
 
@@ -239,7 +241,7 @@ func (r *previewPaneRenderer) Layout(size fyne.Size) {
 	r.pane.bg.Resize(size)
 	r.pane.img.Move(fyne.NewPos(0, 0))
 	r.pane.img.Resize(size)
-	centerObject(r.pane.message, size)
+	centerObject(r.pane.messageView, size)
 	centerObject(r.pane.messageIcon, size)
 }
 
@@ -269,4 +271,13 @@ func centerObject(obj fyne.CanvasObject, size fyne.Size) {
 	}
 	obj.Resize(min)
 	obj.Move(fyne.NewPos((size.Width-min.Width)/2, (size.Height-min.Height)/2))
+}
+
+type previewMessageTheme struct{ fyne.Theme }
+
+func (t previewMessageTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	if name == "foreground" {
+		return color.White
+	}
+	return t.Theme.Color(name, v)
 }
