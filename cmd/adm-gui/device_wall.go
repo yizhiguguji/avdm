@@ -52,10 +52,11 @@ func (g *GUIApp) renderControlCenter() {
 		}
 	}
 	spec := g.controlDensitySpec()
-	var cards, rows []fyne.CanvasObject
+	var cards, rows, stopped []fyne.CanvasObject
 	for _, entry := range g.wallVisibleEntries() {
 		rows = append(rows, g.buildControlCompactRow(entry))
 		if !readyWallEntry(entry) {
+			stopped = append(stopped, g.buildStoppedDeviceCard(entry))
 			continue
 		}
 		card := g.controlCards[entry.Key]
@@ -75,6 +76,15 @@ func (g *GUIApp) renderControlCenter() {
 			spec.cardSize.Height = height
 		}
 		cards = append(cards, card.wall.object)
+	}
+	if g.wallStoppedGrid != nil {
+		g.wallStoppedGrid.Objects = stopped
+		g.wallStoppedGrid.Refresh()
+		if len(stopped) == 0 {
+			g.wallStoppedPanel.Hide()
+		} else {
+			g.wallStoppedPanel.Show()
+		}
 	}
 	g.updateWallWorkspace(cards, rows)
 	if len(cards) == 0 && len(rows) == 0 {
@@ -611,4 +621,28 @@ func (libraryRowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 func libraryTableHeader() fyne.CanvasObject {
 	labels := []fyne.CanvasObject{widget.NewLabel(""), widget.NewLabelWithStyle("设备", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewLabel("类型"), widget.NewLabel("状态"), widget.NewLabel("操作")}
 	return container.NewStack(canvas.NewRectangle(admColorPanelBG2), container.New(libraryRowLayout{}, labels...))
+}
+
+func (g *GUIApp) buildStoppedDeviceCard(entry core.DeviceEntry) fyne.CanvasObject {
+	selected := widget.NewCheck("", nil)
+	selected.SetChecked(g.controlSelected[entry.Key])
+	selected.OnChanged = func(checked bool) {
+		if g.controlSelected == nil {
+			g.controlSelected = map[string]bool{}
+		}
+		g.controlSelected[entry.Key] = checked
+		g.updateSelectedLabel()
+	}
+	name := widget.NewLabelWithStyle(controlCardTitle(entry), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	name.Truncation = fyne.TextTruncateEllipsis
+	manage := compactButton("管理", func() { g.showControlDeviceManageDialog(entry) })
+	actions := container.NewHBox(manage)
+	if entry.AVD != nil && !entry.Running && entry.Active == nil {
+		avd := entry.AVD.Name
+		start := compactButton("启动", func() { g.runAction("启动模拟器 "+avd, func() error { return g.backend.GUIStartAVD(avd) }) })
+		start.Importance = widget.MediumImportance
+		g.prepareActionButton(start)
+		actions.Add(start)
+	}
+	return container.NewVBox(container.NewBorder(nil, nil, selected, nil, name), container.NewBorder(nil, nil, widget.NewLabel(workbenchDeviceState(entry)), actions, nil), widget.NewSeparator())
 }
