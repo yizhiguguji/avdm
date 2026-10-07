@@ -241,11 +241,13 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	g.controlRealtimeStops = map[string]func(){}
 
 	scan := compactButton("扫描", func() { g.refreshAsync(false) })
+	scan.SetIcon(theme.ViewRefreshIcon())
 	frames := compactButton("画面", g.refreshControlScreensAsync)
 	var view *widget.Button
 	view = compactButton("视图", func() { g.showWallViewDialog(view) })
 	external := compactButton("外部窗", g.openExternalDeviceWindows)
 	create := compactButton("创建", g.showCreateAVDDialog)
+	create.SetIcon(theme.ContentAddIcon())
 	start := compactButton("启动选中", g.startWorkbenchSelection)
 	selection := compactButton("选择", nil)
 	selection.SetIcon(theme.MenuDropDownIcon())
@@ -297,7 +299,7 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	}
 	toolbar := container.New(workbenchToolbarLayout{}, objects...)
 	panel := panelSurface("", "", container.NewBorder(toolbar, nil, nil, nil, g.buildWallWorkspace()))
-	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, panel)
+	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.New(workbenchWidthLayout{}, panel))
 }
 
 func (g *GUIApp) showWorkbenchMenu(button *widget.Button, menu *fyne.Menu) {

@@ -33,7 +33,7 @@ func (l wallWorkspaceLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 	width := size.Width
 	if size.Width >= 900 && g.wallLibraryCount > 0 && !g.libraryCollapsed {
 		library.Show()
-		libraryWidth := float32(340)
+		libraryWidth := float32(300)
 		width -= libraryWidth + 12
 		library.Move(fyne.NewPos(width+12, 0))
 		library.Resize(fyne.NewSize(libraryWidth, size.Height))
@@ -59,10 +59,10 @@ func calculatePreviewGeometry(viewport fyne.Size, count int, minWidth, overhead 
 	columns := max(1, int((width+gap)/(minWidth+gap)))
 	columns = min(columns, max(count, 1))
 	cellWidth := (width - gap*float32(columns-1)) / float32(columns)
-	height := max(240, min(viewport.Height-overhead, (cellWidth-32)/0.625))
-	height = min(height, 1100)
-	preview := fyne.NewSize(height*0.625, height)
-	return previewGeometry{columns: columns, preview: preview, card: fyne.NewSize(min(cellWidth, max(minWidth, preview.Width+32)), height+overhead), gap: gap}
+	height := max(240, min(viewport.Height-overhead-24, (cellWidth-20)/0.50))
+	height = min(height, 760)
+	preview := fyne.NewSize(height*0.50, height)
+	return previewGeometry{columns: columns, preview: preview, card: fyne.NewSize(min(cellWidth, max(minWidth, preview.Width+20)), height+overhead), gap: gap}
 }
 
 type adaptivePreviewLayout struct {
@@ -71,7 +71,7 @@ type adaptivePreviewLayout struct {
 }
 
 func (l *adaptivePreviewLayout) geometry(objects []fyne.CanvasObject) previewGeometry {
-	overhead := float32(124)
+	overhead := float32(96)
 	for _, card := range l.g.controlCards {
 		if card.wall.visible {
 			overhead = max(overhead, card.wall.object.MinSize().Height-card.preview.minSize.Height)
@@ -89,7 +89,7 @@ func (l *adaptivePreviewLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	}
 	geom := l.geometry(objects)
 	rows := int(math.Ceil(float64(len(objects)) / float64(geom.columns)))
-	return fyne.NewSize(320, float32(rows)*geom.card.Height+float32(rows-1)*geom.gap)
+	return fyne.NewSize(320, float32(rows)*geom.card.Height+float32(rows-1)*geom.gap+16)
 }
 func (l *adaptivePreviewLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	if len(objects) == 0 {
@@ -108,7 +108,10 @@ func (l *adaptivePreviewLayout) Layout(objects []fyne.CanvasObject, size fyne.Si
 		inRow := min(geom.columns, len(objects)-row*geom.columns)
 		rowWidth := float32(inRow)*geom.card.Width + float32(inRow-1)*geom.gap
 		x := max(0, (size.Width-rowWidth)/2) + float32(col)*(geom.card.Width+geom.gap)
-		obj.Move(fyne.NewPos(x, float32(row)*(geom.card.Height+geom.gap)))
+		rows := (len(objects) + geom.columns - 1) / geom.columns
+		totalHeight := float32(rows)*geom.card.Height + float32(rows-1)*geom.gap
+		y := max(8, (l.viewport.Height-totalHeight)/2)
+		obj.Move(fyne.NewPos(x, y+float32(row)*(geom.card.Height+geom.gap)))
 		obj.Resize(geom.card)
 	}
 }
@@ -116,7 +119,7 @@ func (l *adaptivePreviewLayout) Layout(objects []fyne.CanvasObject, size fyne.Si
 func (g *GUIApp) buildWallWorkspace() fyne.CanvasObject {
 	g.controlGrid.Layout = &adaptivePreviewLayout{g: g}
 	g.wallLibraryGrid = container.NewVBox()
-	g.wallOnlineLabel = widget.NewLabel("在线设备")
+	g.wallOnlineLabel = widget.NewLabelWithStyle("在线设备", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	g.wallLibraryButton = compactButton("设备库", func() {
 		if g.wallWorkspaceWidth < 900 {
 			g.showDeviceLibraryDialog()
@@ -126,7 +129,7 @@ func (g *GUIApp) buildWallWorkspace() fyne.CanvasObject {
 		g.wallWorkspace.Refresh()
 	})
 	online := container.NewBorder(nil, nil, nil, nil, container.NewVScroll(g.controlGrid))
-	library := panelSurface("设备库", "未启动、启动中及异常设备", container.NewVScroll(g.wallLibraryGrid))
+	library := panelSurface("设备库", "未启动及异常设备", container.NewVScroll(g.wallLibraryGrid))
 	g.wallWorkspace = container.New(wallWorkspaceLayout{g: g}, online, library)
 	header := container.NewBorder(nil, nil, g.wallOnlineLabel, g.wallLibraryButton, nil)
 	return container.NewBorder(header, nil, nil, nil, g.wallWorkspace)
@@ -142,7 +145,7 @@ func (g *GUIApp) updateWallWorkspace(cards, rows []fyne.CanvasObject) {
 	}
 	g.wallLibraryGrid.Objects = rows
 	g.wallLibraryGrid.Refresh()
-	g.wallOnlineLabel.SetText(fmt.Sprintf("在线设备 %d 台", len(cards)))
+	g.wallOnlineLabel.SetText(fmt.Sprintf("在线设备 · %d", len(cards)))
 	g.wallLibraryButton.SetText(fmt.Sprintf("设备库 (%d)", len(rows)))
 	if len(rows) == 0 {
 		g.wallLibraryButton.Disable()
@@ -169,4 +172,22 @@ func (g *GUIApp) showDeviceLibraryDialog() {
 	d := dialog.NewCustom("设备库", "关闭", content, g.activeDialogWindow())
 	d.SetOnClosed(g.renderControlCenter)
 	d.Show()
+}
+
+// Cap reading width on very large displays instead of magnifying a phone to
+// an entire monitor. The workspace still responds to tool and log panes.
+type workbenchWidthLayout struct{}
+
+func (workbenchWidthLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) == 0 {
+		return fyne.NewSize(320, 240)
+	}
+	return fyne.NewSize(320, objects[0].MinSize().Height)
+}
+func (workbenchWidthLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, obj := range objects {
+		width := min(size.Width, 1600)
+		obj.Move(fyne.NewPos((size.Width-width)/2, 0))
+		obj.Resize(fyne.NewSize(width, size.Height))
+	}
 }

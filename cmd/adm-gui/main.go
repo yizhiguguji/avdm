@@ -452,17 +452,17 @@ func setVisible(obj fyne.CanvasObject, visible bool) {
 // lit when open); below a divider, two momentary action icons fire the reboot
 // and close/disconnect flows directly with a confirmation dialog.
 func (g *GUIApp) buildRightIconBar() fyne.CanvasObject {
-	g.installIcon = newWorkbenchRailButton("安装", nil, func() { g.toggleRightPanel("install") })
-	g.uninstallIcon = newWorkbenchRailButton("卸载", nil, func() { g.toggleRightPanel("uninstall") })
-	g.messageIcon = newWorkbenchRailButton("输入", nil, func() { g.toggleRightPanel("message") })
-	reboot := newWorkbenchRailButton("重启", nil, g.rebootCurrentDevice)
-	close := newWorkbenchRailButton("关闭", nil, g.closeCurrentDevice)
+	g.installIcon = newWorkbenchRailButton("安装", theme.DownloadIcon(), func() { g.toggleRightPanel("install") })
+	g.uninstallIcon = newWorkbenchRailButton("卸载", theme.DeleteIcon(), func() { g.toggleRightPanel("uninstall") })
+	g.messageIcon = newWorkbenchRailButton("输入", theme.ContentPasteIcon(), func() { g.toggleRightPanel("message") })
+	reboot := newWorkbenchRailButton("重启", theme.ViewRefreshIcon(), g.rebootCurrentDevice)
+	close := newWorkbenchRailButton("关闭", theme.CancelIcon(), g.closeCurrentDevice)
 	g.prepareActionButton(reboot)
-	g.logToolIcon = newWorkbenchRailButton("日志", nil, func() {
+	g.logToolIcon = newWorkbenchRailButton("日志", theme.DocumentIcon(), func() {
 		g.logCollapsed = !g.logCollapsed
 		g.applyWorkbenchCollapseState()
 	})
-	return iconBarColumn(g.installIcon, g.uninstallIcon, g.messageIcon, iconBarDivider(), widget.NewLabel("主目标"), reboot, close, iconBarDivider(), g.logToolIcon)
+	return iconBarColumn(g.installIcon, g.uninstallIcon, g.messageIcon, iconBarDivider(), container.NewCenter(mutedText("主目标")), reboot, close, iconBarDivider(), g.logToolIcon)
 }
 
 func iconBarColumn(items ...fyne.CanvasObject) fyne.CanvasObject {
@@ -491,19 +491,19 @@ func (g *GUIApp) buildTopBar() fyne.CanvasObject {
 		g.showToolHealthDialog()
 	})
 
-	title := canvas.NewText("安卓设备矩阵", admColorText)
+	title := canvas.NewText("设备工作台", admColorText)
 	title.TextStyle = fyne.TextStyle{Bold: true}
-	title.TextSize = 16
+	title.TextSize = 15
 	g.currentLabel.Wrapping = fyne.TextTruncate
 	g.selectedLabel.Wrapping = fyne.TextTruncate
 	g.toolSummary.Wrapping = fyne.TextTruncate
 	g.busyLabel.Wrapping = fyne.TextTruncate
 	targetBlock := container.NewHBox(
 		compactStatus(g.currentLabel, topBarTargetWidth),
-		compactStatus(g.selectedLabel, topBarSelectionWidth),
+		container.NewThemeOverride(compactStatus(g.selectedLabel, topBarSelectionWidth), captionTheme{g.app.Settings().Theme()}),
 	)
 	healthBlock := container.NewHBox(
-		compactStatus(g.toolSummary, topBarToolWidth),
+		container.NewThemeOverride(compactStatus(g.toolSummary, topBarToolWidth), captionTheme{g.app.Settings().Theme()}),
 		compactStatus(g.busyLabel, topBarTaskWidth),
 		container.NewGridWrap(fyne.NewSize(topBarActivitySize, topBarActivitySize), g.progress),
 	)
@@ -679,7 +679,7 @@ func appFrame(content fyne.CanvasObject) fyne.CanvasObject {
 
 func collapsedBar(content fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(
-		roundedRect(color.NRGBA{R: 10, G: 16, B: 28, A: 190}, 4),
+		roundedRect(admColorAppBG, 0),
 		content,
 	)
 }
@@ -731,12 +731,10 @@ func stableWorkspacePanel(content fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func controlCardSurface(content fyne.CanvasObject) fyne.CanvasObject {
-	bg := roundedRect(color.NRGBA{R: 13, G: 20, B: 34, A: 255}, 8)
-	border := roundedRect(color.NRGBA{R: 30, G: 41, B: 59, A: 255}, 8)
-	return container.NewStack(
-		border,
-		container.NewPadded(container.NewStack(bg, container.NewPadded(content))),
-	)
+	bg := roundedRect(admColorPanelBG, 6)
+	bg.StrokeColor = admColorBorder
+	bg.StrokeWidth = 1
+	return container.NewStack(bg, container.NewPadded(content))
 }
 
 // rightToolPanel wraps one right-side tool panel's content in a scrollable
@@ -759,11 +757,11 @@ func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 		g.logFollow = true
 		g.scrollLogToBottom()
 	})
-	clearButton.Importance = widget.MediumImportance
+	clearButton.Importance = widget.LowImportance
 	copyButton := widget.NewButton("复制全部", func() {
 		g.app.Clipboard().SetContent(strings.Join(g.logLines, "\n"))
 	})
-	copyButton.Importance = widget.MediumImportance
+	copyButton.Importance = widget.LowImportance
 	copySelection := widget.NewButton("复制选中", func() {
 		if text := g.logLabel.SelectedText(); text != "" {
 			g.app.Clipboard().SetContent(text)
@@ -779,6 +777,8 @@ func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 		g.logHint.SetText("最近 200 行 · 拖选或 ⌘A / ⌘C")
 		g.scrollLogToBottom()
 	})
+	copySelection.Importance = widget.LowImportance
+	followButton.Importance = widget.LowImportance
 	g.logScroll = container.NewScroll(g.logLabel)
 	g.logScroll.OnScrolled = func(_ fyne.Position) {
 		if g.logProgrammaticScroll {
@@ -789,7 +789,7 @@ func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 	// Collapse is driven by the log icon in the right rail; the header keeps
 	// only the clear/copy actions.
 	g.logHint = widget.NewLabel("最近 200 行 · 拖选或 ⌘A / ⌘C")
-	header := container.NewBorder(nil, nil, container.NewVBox(sectionTitle("任务/日志"), g.logHint), container.NewHBox(followButton, clearButton, copySelection, copyButton), nil)
+	header := container.NewBorder(nil, nil, container.NewVBox(sectionTitle("任务/日志"), container.NewThemeOverride(g.logHint, captionTheme{g.app.Settings().Theme()})), container.NewHBox(followButton, clearButton, copySelection, copyButton), nil)
 	return panelSurface("", "", container.NewBorder(
 		header, nil, nil, nil, g.logScroll,
 	))
@@ -1537,7 +1537,7 @@ func absFloat32(value float32) float32 {
 func compactButton(label string, fn func()) *widget.Button {
 	button := widget.NewButton(label, fn)
 	button.Alignment = widget.ButtonAlignCenter
-	button.Importance = widget.MediumImportance
+	button.Importance = widget.LowImportance
 	return button
 }
 
