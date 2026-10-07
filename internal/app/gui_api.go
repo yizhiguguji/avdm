@@ -421,19 +421,29 @@ func (a *App) GUIStartAVD(avdName string) error {
 	if strings.TrimSpace(avdName) == "" {
 		return fmt.Errorf("AVD 名称不能为空")
 	}
-	if err := a.launchEmulator(avdName); err != nil {
-		return err
-	}
-	device, err := a.waitForAVDReady(avdName, 180*time.Second)
+	release := a.lockAVDTask(avdName)
+	defer release()
+	device, err := a.startAVDUnlocked(avdName)
 	if err != nil {
 		return err
-	}
-	if err := a.prepareReadyAVDDefaults(device.Serial); err != nil {
-		return fmt.Errorf("模拟器已启动，但启动后初始化失败：%w", err)
 	}
 	a.setCurrentDevice(device)
 	_ = focusEmulatorWindow(avdName, device.Serial)
 	return nil
+}
+
+func (a *App) startAVDUnlocked(avdName string) (*ActiveDevice, error) {
+	if err := a.launchEmulator(avdName); err != nil {
+		return nil, err
+	}
+	device, err := a.waitForAVDReady(avdName, 180*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.prepareReadyAVDDefaults(device.Serial); err != nil {
+		return nil, fmt.Errorf("模拟器已启动，但启动后初始化失败：%w", err)
+	}
+	return device, nil
 }
 
 func (a *App) GUIStartAVDs(avdNames []string) error {
@@ -457,43 +467,21 @@ func (a *App) GUIStartAVDs(avdNames []string) error {
 			return fmt.Errorf("不能启动已经运行的 AVD：%s（%s）", avd.Name, reason)
 		}
 	}
-
 	var failures []string
-	var launched []string
 	var lastReady *ActiveDevice
 	var mu sync.Mutex
-
 	runLimited(names, 4, func(name string) {
-		if err := a.launchEmulator(name); err != nil {
-			mu.Lock()
-			failures = append(failures, fmt.Sprintf("%s：%v", name, err))
-			mu.Unlock()
-			return
-		}
+		release := a.lockAVDTask(name)
+		defer release()
+		device, err := a.startAVDUnlocked(name)
 		mu.Lock()
-		launched = append(launched, name)
-		mu.Unlock()
-	})
-
-	runLimited(launched, 4, func(name string) {
-		device, err := a.waitForAVDReady(name, 180*time.Second)
+		defer mu.Unlock()
 		if err != nil {
-			mu.Lock()
 			failures = append(failures, fmt.Sprintf("%s：%v", name, err))
-			mu.Unlock()
 			return
 		}
-		if err := a.prepareReadyAVDDefaults(device.Serial); err != nil {
-			mu.Lock()
-			failures = append(failures, fmt.Sprintf("%s：启动后初始化失败：%v", name, err))
-			mu.Unlock()
-			return
-		}
-		mu.Lock()
 		lastReady = device
-		mu.Unlock()
 	})
-
 	if lastReady != nil {
 		a.setCurrentDevice(lastReady)
 		_ = focusEmulatorWindow(lastReady.AVDName, lastReady.Serial)
@@ -524,6 +512,8 @@ func runLimited[T any](items []T, limit int, fn func(T)) {
 }
 
 func (a *App) GUIRenameAVD(oldName, newName string) error {
+	release := a.lockAVDTask(oldName)
+	defer release()
 	oldName = strings.TrimSpace(oldName)
 	newName = strings.TrimSpace(newName)
 	if oldName == "" || newName == "" {
@@ -556,6 +546,8 @@ func (a *App) GUIRenameAVD(oldName, newName string) error {
 }
 
 func (a *App) GUICreateAVD(name, image, deviceID string, start bool) error {
+	release := a.lockAVDTask(strings.TrimSpace(name))
+	defer release()
 	name = strings.TrimSpace(name)
 	image = strings.TrimSpace(image)
 	deviceID = strings.TrimSpace(deviceID)
@@ -577,12 +569,20 @@ func (a *App) GUICreateAVD(name, image, deviceID string, start bool) error {
 		return fmt.Errorf("AVD 已创建，但键盘配置写入失败：%w", err)
 	}
 	if start {
-		return a.GUIStartAVD(name)
+		device, err := a.startAVDUnlocked(name)
+		if err != nil {
+			return err
+		}
+		a.setCurrentDevice(device)
+		_ = focusEmulatorWindow(name, device.Serial)
+		return nil
 	}
 	return nil
 }
 
 func (a *App) GUIDeleteAVD(avdName string, confirmed, forceClose bool) error {
+	release := a.lockAVDTask(avdName)
+	defer release()
 	avd, ok, err := a.findAVD(avdName)
 	if err != nil {
 		return err
@@ -645,21 +645,11 @@ func (a *App) GUIDeleteAVDs(avdNames []string, confirmed, forceClose bool) error
 
 	var failures []string
 	for _, avd := range avds {
-		running, _, err := a.isAVDProbablyRunning(avd.Name)
-		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s：%v", avd.Name, err))
-			continue
-		}
-		if running {
-			if err := a.forceCloseAVDForDelete(avd.Name); err != nil {
-				failures = append(failures, fmt.Sprintf("%s：%v", avd.Name, err))
-				continue
-			}
-		}
-		if _, err := a.runToolOutput(toolAVDManager, 2*time.Minute, "delete", "avd", "-n", avd.Name); err != nil {
+		if err := a.GUIDeleteAVD(avd.Name, confirmed, forceClose); err != nil {
 			failures = append(failures, fmt.Sprintf("%s：%v", avd.Name, err))
 		}
 	}
+
 	if len(failures) > 0 {
 		return fmt.Errorf("批量删除部分失败：\n%s", strings.Join(failures, "\n"))
 	}
@@ -827,7 +817,9 @@ func (a *App) installAPKToDevices(source string, deviceSerials []string, mode in
 	var blockedReasons []string
 	var blockedSerials []string
 	for _, target := range targets {
+		release := a.lockDeviceTask(target.device.Serial)
 		err := a.smartInstallAPKForGUI(target.device.Serial, apkPath, mode)
+		release()
 		if err == nil {
 			successCount++
 			continue
@@ -936,6 +928,14 @@ func (a *App) GUIListPackages(userInstalledOnly bool, filter string) ([]string, 
 	if err != nil {
 		return nil, err
 	}
+	return a.GUIListPackagesForDevice(device.Serial, userInstalledOnly, filter)
+}
+
+func (a *App) GUIListPackagesForDevice(serial string, userInstalledOnly bool, filter string) ([]string, error) {
+	device, err := a.requireReadySerial(serial)
+	if err != nil {
+		return nil, err
+	}
 	args := []string{"-s", device.Serial, "shell", "pm", "list", "packages"}
 	var userPackages map[string]bool
 	if userInstalledOnly {
@@ -983,6 +983,16 @@ func (a *App) GUIUninstallPackage(pkg string, keepData, user0 bool) error {
 	if err != nil {
 		return err
 	}
+	return a.GUIUninstallPackageForDevice(device.Serial, pkg, keepData, user0)
+}
+
+func (a *App) GUIUninstallPackageForDevice(serial string, pkg string, keepData, user0 bool) error {
+	release := a.lockDeviceTask(serial)
+	defer release()
+	device, err := a.requireReadySerial(serial)
+	if err != nil {
+		return err
+	}
 	pkg = strings.TrimSpace(pkg)
 	if pkg == "" {
 		return fmt.Errorf("包名不能为空")
@@ -999,6 +1009,16 @@ func (a *App) GUIUninstallPackage(pkg string, keepData, user0 bool) error {
 
 func (a *App) GUISendText(text string, allowADBKeyboard bool) error {
 	device, err := a.requireCurrentReadyDevice()
+	if err != nil {
+		return err
+	}
+	return a.GUISendTextForDevice(device.Serial, text, allowADBKeyboard)
+}
+
+func (a *App) GUISendTextForDevice(serial string, text string, allowADBKeyboard bool) error {
+	release := a.lockDeviceTask(serial)
+	defer release()
+	device, err := a.requireReadySerial(serial)
 	if err != nil {
 		return err
 	}
@@ -1019,11 +1039,31 @@ func (a *App) GUIInstallADBKeyboard() error {
 	if err != nil {
 		return err
 	}
+	return a.GUIInstallADBKeyboardForDevice(device.Serial)
+}
+
+func (a *App) GUIInstallADBKeyboardForDevice(serial string) error {
+	release := a.lockDeviceTask(serial)
+	defer release()
+	device, err := a.requireReadySerial(serial)
+	if err != nil {
+		return err
+	}
 	return a.installADBKeyboardForDevice(device.Serial)
 }
 
 func (a *App) GUIRebootCurrent() error {
 	device, err := a.requireCurrentReadyDevice()
+	if err != nil {
+		return err
+	}
+	return a.GUIRebootDevice(device.Serial)
+}
+
+func (a *App) GUIRebootDevice(serial string) error {
+	release := a.lockDeviceTask(serial)
+	defer release()
+	device, err := a.requireReadySerial(serial)
 	if err != nil {
 		return err
 	}
@@ -1040,7 +1080,15 @@ func (a *App) GUIRebootCurrent() error {
 	if err != nil {
 		return err
 	}
-	a.setCurrentDevice(restored)
+	restoredKey := a.deviceAliasKey(&before)
+	a.mu.Lock()
+	if a.currentDevice == nil && a.cfg.LastDeviceKey == restoredKey {
+		copied := *restored
+		a.currentDevice = &copied
+		a.cfg.LastDeviceKey = restoredKey
+		a.persistConfigLocked()
+	}
+	a.mu.Unlock()
 	return nil
 }
 
@@ -1049,7 +1097,7 @@ func (a *App) GUICloseCurrent(serialConfirmation string) error {
 	if err != nil {
 		return err
 	}
-	return a.closeDeviceForGUI(*device, serialConfirmation)
+	return a.GUICloseDeviceConfirmed(device.Serial, serialConfirmation)
 }
 
 func (a *App) GUICloseDevice(key string) error {
@@ -1057,13 +1105,31 @@ func (a *App) GUICloseDevice(key string) error {
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return fmt.Errorf("未找到设备：%s", key)
+	if !ok || entry.Active == nil {
+		return fmt.Errorf("设备未连接或未启动：%s", key)
 	}
-	if entry.Active == nil {
-		return fmt.Errorf("设备未连接或未启动：%s", entry.Label)
+	if !entry.Active.IsEmulator && !strings.Contains(entry.Active.Serial, ":") {
+		return fmt.Errorf("真机关机需要输入 serial 确认：%s", entry.Active.Serial)
 	}
-	return a.closeDeviceForGUI(*entry.Active, entry.Active.Serial)
+	return a.GUICloseDeviceConfirmed(entry.Active.Serial, entry.Active.Serial)
+}
+
+func (a *App) GUICloseDeviceConfirmed(serial, serialConfirmation string) error {
+	if strings.TrimSpace(serial) == "" || serial != serialConfirmation {
+		return fmt.Errorf("关闭/断开设备需要输入 serial 确认：%s", serial)
+	}
+	release := a.lockDeviceTask(serial)
+	defer release()
+	devices, err := a.activeDevices()
+	if err != nil {
+		return err
+	}
+	for _, device := range devices {
+		if device.Serial == serial {
+			return a.closeDeviceForGUI(device, serialConfirmation)
+		}
+	}
+	return fmt.Errorf("设备已不可用：%s", serial)
 }
 
 func (a *App) GUICloseDevices(keys []string) error {
@@ -1098,6 +1164,8 @@ func (a *App) GUICloseDevices(keys []string) error {
 	var closed []string
 	var mu sync.Mutex
 	runLimited(targets, 4, func(target closeTarget) {
+		release := a.lockDeviceTask(target.serial)
+		defer release()
 		if _, err := a.runToolOutput(toolADB, 10*time.Second, "-s", target.serial, "emu", "kill"); err != nil {
 			mu.Lock()
 			failures = append(failures, fmt.Sprintf("%s：%v", target.label, err))
@@ -1124,6 +1192,8 @@ func (a *App) GUICloseDevices(keys []string) error {
 }
 
 func (a *App) GUICloseAVD(name string) error {
+	release := a.lockAVDTask(name)
+	defer release()
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("AVD 名称为空")
@@ -1182,14 +1252,11 @@ func normalizedUniqueNames(names []string) []string {
 }
 
 func (a *App) requireCurrentReadyDevice() (*ActiveDevice, error) {
-	device, ok, err := a.currentReadyDevice()
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
+	device := a.currentDeviceSnapshot()
+	if device == nil {
 		return nil, fmt.Errorf("当前设备不可用，请先选择一个 state=device 的设备")
 	}
-	return device, nil
+	return a.requireReadySerial(device.Serial)
 }
 
 func (a *App) installAPKSourceToDeviceForGUI(device *ActiveDevice, apkSource string, mode installMode) error {
@@ -1198,6 +1265,8 @@ func (a *App) installAPKSourceToDeviceForGUI(device *ActiveDevice, apkSource str
 		return err
 	}
 	defer cleanup()
+	release := a.lockDeviceTask(device.Serial)
+	defer release()
 	if err := a.smartInstallAPKForGUI(device.Serial, apkPath, mode); err != nil {
 		return err
 	}

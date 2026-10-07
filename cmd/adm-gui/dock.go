@@ -12,10 +12,8 @@ import (
 // Dock geometry. All values are pixels, not ratios, so panes keep their size
 // when the window resizes; the center content absorbs the difference.
 const (
-	dockIconBarWidth    float32 = 38  // width of an always-visible edge icon bar
+	dockIconBarWidth    float32 = 64  // width of an always-visible edge icon bar
 	dockIconGap         float32 = 6   // gap between an icon bar and its neighbour
-	dockIconCell        float32 = 34  // square highlight cell behind each icon
-	dockIconSize        float32 = 20  // rendered icon glyph size
 	dockRailHeight      float32 = 32  // height of the collapsed bottom rail
 	dockHandleThickness float32 = 6   // draggable divider thickness
 	dockSideMinWidth    float32 = 200 // min expanded width of a side pane
@@ -33,9 +31,6 @@ var (
 	dockHandleHoverColor = color.NRGBA{R: 45, G: 212, B: 191, A: 90}
 	dockGripColor        = color.NRGBA{R: 71, G: 85, B: 105, A: 255}
 	dockGripHoverColor   = color.NRGBA{R: 45, G: 212, B: 191, A: 255}
-
-	toolIconActiveBG = color.NRGBA{R: 45, G: 212, B: 191, A: 46} // teal wash behind an open pane's icon
-	toolIconHoverBG  = color.NRGBA{R: 148, G: 163, B: 184, A: 30}
 )
 
 // setPaneCollapsed toggles a docked pane between its full panel and its
@@ -368,109 +363,23 @@ func (r *resizeHandleRenderer) Objects() []fyne.CanvasObject {
 	return r.objects
 }
 
-// toolIcon is a tappable icon used in the edge icon bars. A "toggle" icon lights
-// up (teal wash) when its pane is open and dims when the pane is collapsed; a
-// "momentary" icon (a one-shot action such as reboot) never stays lit and only
-// reacts on hover.
-type toolIcon struct {
-	widget.BaseWidget
-	res       fyne.Resource
-	onTap     func()
-	momentary bool
-	active    bool
-	hovered   bool
+// Standard labeled buttons provide Fyne focus traversal and keyboard activation.
+// Text alone fits the narrow rail; the resource remains accepted for callers
+// that identify the corresponding action icon.
+func newWorkbenchRailButton(label string, _ fyne.Resource, onTap func()) *widget.Button {
+	button := widget.NewButton(label, onTap)
+	button.Importance = widget.LowImportance
+	return button
 }
 
-func newToolIcon(res fyne.Resource, momentary bool, onTap func()) *toolIcon {
-	t := &toolIcon{res: res, onTap: onTap, momentary: momentary}
-	t.ExtendBaseWidget(t)
-	return t
-}
-
-func (t *toolIcon) setActive(active bool) {
-	if t.momentary || t.active == active {
+func setWorkbenchToolActive(button *widget.Button, active bool) {
+	if button == nil {
 		return
 	}
-	t.active = active
-	t.Refresh()
-}
-
-func (t *toolIcon) Tapped(*fyne.PointEvent) {
-	if t.onTap != nil {
-		t.onTap()
+	if active {
+		button.Importance = widget.HighImportance
+	} else {
+		button.Importance = widget.LowImportance
 	}
-}
-
-func (t *toolIcon) Cursor() desktop.Cursor { return desktop.PointerCursor }
-
-func (t *toolIcon) MouseIn(*desktop.MouseEvent) {
-	t.hovered = true
-	t.Refresh()
-}
-
-func (t *toolIcon) MouseMoved(*desktop.MouseEvent) {}
-
-func (t *toolIcon) MouseOut() {
-	t.hovered = false
-	t.Refresh()
-}
-
-func (t *toolIcon) CreateRenderer() fyne.WidgetRenderer {
-	bg := canvas.NewRectangle(color.Transparent)
-	bg.CornerRadius = 7
-	img := canvas.NewImageFromResource(t.res)
-	img.FillMode = canvas.ImageFillContain
-	r := &toolIconRenderer{icon: t, bg: bg, img: img, objects: []fyne.CanvasObject{bg, img}}
-	r.Refresh()
-	return r
-}
-
-type toolIconRenderer struct {
-	icon    *toolIcon
-	bg      *canvas.Rectangle
-	img     *canvas.Image
-	objects []fyne.CanvasObject
-}
-
-func (r *toolIconRenderer) Layout(size fyne.Size) {
-	cell := dockIconCell
-	if cell > size.Width {
-		cell = size.Width
-	}
-	if cell > size.Height {
-		cell = size.Height
-	}
-	r.bg.Resize(fyne.NewSize(cell, cell))
-	r.bg.Move(fyne.NewPos((size.Width-cell)/2, (size.Height-cell)/2))
-	r.img.Resize(fyne.NewSize(dockIconSize, dockIconSize))
-	r.img.Move(fyne.NewPos((size.Width-dockIconSize)/2, (size.Height-dockIconSize)/2))
-}
-
-func (r *toolIconRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(dockIconBarWidth, dockIconCell)
-}
-
-func (r *toolIconRenderer) Refresh() {
-	switch {
-	case r.icon.active:
-		r.bg.FillColor = toolIconActiveBG
-		r.img.Translucency = 0
-	case r.icon.hovered:
-		r.bg.FillColor = toolIconHoverBG
-		r.img.Translucency = 0
-	case r.icon.momentary:
-		r.bg.FillColor = color.Transparent
-		r.img.Translucency = 0
-	default:
-		r.bg.FillColor = color.Transparent
-		r.img.Translucency = 0.45
-	}
-	r.bg.Refresh()
-	r.img.Refresh()
-}
-
-func (r *toolIconRenderer) Destroy() {}
-
-func (r *toolIconRenderer) Objects() []fyne.CanvasObject {
-	return r.objects
+	button.Refresh()
 }
