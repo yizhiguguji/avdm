@@ -93,7 +93,7 @@ The GUI is designed as a plain tool surface:
 - The top area shows the current operation target and Android tool status.
 - The `工具` button shows dependency health and can run the bundled macOS
   dependency installer.
-- The left area lists physical devices, running emulators, and stopped AVDs.
+- The device wall fills the main area with physical devices, running emulators, and stopped AVDs. Its top toolbar contains all device management actions.
 - The right area provides fixed task buttons for installing APKs, sending text,
   uninstalling apps, and device operations.
 - The bottom log area shows recent operation status with `INFO`, `DONE`, and
@@ -105,9 +105,9 @@ and re-checks tool availability without requiring a source checkout.
 
 ### Control Center
 
-Use `Control Center` / `中控大屏` from the device panel to open a separate device
-wall. It shows every known physical device, running emulator, and stopped AVD in
-one place.
+The main window contains the device wall. It shows every known physical device, running emulator, and stopped AVD in one place. There is no separate left control panel.
+
+The toolbar uses a single compact row for scanning, screenshot refresh, density, external windows, AVD creation, selection, main target, startup, shutdown and deletion. The `选择` menu groups selecting available devices, selecting stopped AVDs and clearing selection. `启动选中`, `关闭选中`, and `删除选中` use the card checkboxes for one or multiple AVDs. `设为主目标` requires exactly one available device. Deletion lists the selected AVDs and requires confirmation; physical devices are excluded. Logs can be expanded from the right rail.
 
 The wall is for status and selection:
 
@@ -139,10 +139,7 @@ serial instead of opening a duplicate mirror. It does not use `--time-limit`.
 The `外部窗` action can focus native Android Emulator windows and open scrcpy
 windows for physical devices. Focusing or arranging native Emulator windows on
 macOS needs Accessibility permission because 安卓设备矩阵 controls another app's
-windows. Grant access in System Settings > Privacy & Security > Accessibility.
-If the app was replaced after granting permission, remove the old 安卓设备矩阵 entry and
-add the new `/Applications/安卓设备矩阵.app` entry again. 安卓设备矩阵 checks this permission
-without opening Apple's system prompt during window operations.
+windows. When permission is missing, the app shows an authorization guide. Click `打开系统设置` to open System Settings > Privacy & Security > Accessibility and enable `安卓设备矩阵.app`. The `工具` panel also has an `辅助功能授权` entry. After enabling permission, return to the app and retry; restart the app if the permission is not yet recognized.
 
 ### Install APK
 

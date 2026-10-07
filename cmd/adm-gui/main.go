@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	_ "image/png"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,7 +23,6 @@ import (
 )
 
 const maxLogLines = 200
-const deviceListItemHeight float32 = 42
 const controlPreviewInterval = 2 * time.Second
 const controlDensitySmall = "small"
 const controlDensityStandard = "standard"
@@ -153,7 +153,6 @@ type GUIApp struct {
 	refreshPendingRevealTop bool
 
 	entries           []core.DeviceEntry
-	selectedKey       string
 	currentDeviceKey  string
 	currentDevice     string
 	toolDetails       string
@@ -161,8 +160,6 @@ type GUIApp struct {
 	lastAPKSource     string
 	mirrorAlwaysOnTop map[string]bool
 
-	deviceList            *widget.List
-	deviceSummary         *widget.Label
 	currentLabel          *widget.Label
 	selectedLabel         *widget.Label
 	toolSummary           *widget.Label
@@ -188,35 +185,29 @@ type GUIApp struct {
 	// ratios) so the sidebars keep their size when the window is resized; the
 	// center device wall absorbs the change. See dock.go for the layouts.
 	//
-	// leftCollapsed/logCollapsed are booleans; the right side instead tracks
+	// logCollapsed is a boolean; the right side instead tracks
 	// which tool panel is open in rightActive ("" = none, else "install" /
 	// "uninstall" / "message"), because its edge icon bar switches between
 	// several mutually-exclusive panels JetBrains-style.
-	leftCollapsed bool
-	rightActive   string
-	logCollapsed  bool
-	leftW         float32
-	rightW        float32
-	logH          float32
+	rightActive  string
+	logCollapsed bool
+	rightW       float32
+	logH         float32
 
 	hDock          *fyne.Container
 	vDock          *fyne.Container
 	logStack       *fyne.Container
 	logRail        fyne.CanvasObject
 	logRailSummary *canvas.Text
-	leftHandle     *resizeHandle
 	rightHandle    *resizeHandle
 	logHandle      *resizeHandle
-	leftPanel      fyne.CanvasObject
 	rightPanel     fyne.CanvasObject
 	logPanel       fyne.CanvasObject
 
 	// Edge icon bars (always visible) and their tappable icons. The icons are
 	// the single collapse/expand control per pane: highlighted when the pane
 	// is open, dimmed when collapsed. See toolIcon in dock.go.
-	leftIconBar   fyne.CanvasObject
 	rightIconBar  fyne.CanvasObject
-	leftToolIcon  *toolIcon
 	logToolIcon   *toolIcon
 	installIcon   *toolIcon
 	uninstallIcon *toolIcon
@@ -672,7 +663,6 @@ func (g *GUIApp) build() {
 	g.logFollow = true
 
 	topBar := g.buildTopBar()
-	g.leftPanel = g.buildDevicePanel()
 	wall := g.buildDeviceWallPanel()
 
 	// The three right-side tool panels are built once and only toggled visible;
@@ -685,11 +675,7 @@ func (g *GUIApp) build() {
 
 	g.logPanel = g.buildLogPanel()
 
-	// Remember the last expanded pixel size of each pane so collapse→expand
-	// restores it. Defaults roughly match the old ratio layout on a 1280 window.
-	if g.leftW == 0 {
-		g.leftW = dockLeftDefaultWidth
-	}
+	// Keep the tool panel and log sizes stable when toggling them.
 	if g.rightW == 0 {
 		g.rightW = dockRightDefaultWidth
 	}
@@ -697,28 +683,22 @@ func (g *GUIApp) build() {
 		g.logH = dockLogDefaultHeight
 	}
 
-	g.leftIconBar = g.buildLeftBar()
 	g.rightIconBar = g.buildRightIconBar()
 	g.logRail = g.buildLogRail()
 
-	// The log pane uses a stacked summary rail (collapsed) / full panel
-	// (expanded). Its toggle lives at the bottom of the left gutter, so neither
-	// the rail nor the panel header carry a chevron of their own.
+	// The log pane uses a summary rail or full panel, toggled from the right rail.
 	g.logStack = container.NewStack(g.logPanel, g.logRail)
 
-	g.leftHandle = newResizeHandle(true, g.resizeLeftBy)
 	g.rightHandle = newResizeHandle(true, g.resizeRightBy)
 	g.logHandle = newResizeHandle(false, g.resizeLogBy)
 
-	// Working area upper row (between the gutters): left panel | left handle |
-	// device wall | right handle | right panel. A collapsed panel and its handle
-	// shrink to zero width; the device wall absorbs the difference.
+	// The device wall fills the workbench beside the optional right tool panel.
 	g.hDock = container.New(horizontalDockLayout{g: g},
-		g.leftPanel, g.leftHandle, wall, g.rightHandle, g.rightPanel)
+		wall, g.rightHandle, g.rightPanel)
 	g.vDock = container.New(verticalDockLayout{g: g}, g.hDock, g.logHandle, g.logStack)
 
-	// Root: full-height left gutter | working area | full-height right gutter.
-	root := container.New(edgeBarLayout{}, g.leftIconBar, g.vDock, g.rightIconBar)
+	// Root: working area followed by the right tool rail.
+	root := container.New(edgeBarLayout{}, g.vDock, g.rightIconBar)
 	g.applyWorkbenchCollapseState()
 
 	page := container.NewBorder(topBar, nil, nil, nil, root)
@@ -726,17 +706,13 @@ func (g *GUIApp) build() {
 }
 
 // applyWorkbenchCollapseState reconciles the docked panes with the current
-// state (leftCollapsed / rightActive / logCollapsed). It only toggles child
+// state (rightActive / logCollapsed). It only toggles child
 // visibility and relays out the docks — no window.Resize hack, and no
 // Split.Offset ratios (those were the source of the "still draggable when
 // collapsed" and scaling-drift bugs). A collapsed pane's resize handle is
 // hidden, which makes it physically undraggable; the always-visible edge icon
 // bars are the way back.
 func (g *GUIApp) applyWorkbenchCollapseState() {
-	// Left: single panel toggled by leftCollapsed. No rail — its edge icon is
-	// the expand control.
-	setPaneCollapsed(g.leftPanel, nil, g.leftHandle, g.leftCollapsed)
-
 	// Right: rightActive names the one visible tool panel ("" = none).
 	g.reconcileRightPanels()
 
@@ -784,9 +760,6 @@ func (g *GUIApp) toggleRightPanel(name string) {
 // keeping the icon bars, panel visibility and dock layout on a single source
 // of truth.
 func (g *GUIApp) syncIconHighlights() {
-	if g.leftToolIcon != nil {
-		g.leftToolIcon.setActive(!g.leftCollapsed)
-	}
 	if g.logToolIcon != nil {
 		g.logToolIcon.setActive(!g.logCollapsed)
 	}
@@ -812,29 +785,6 @@ func setVisible(obj fyne.CanvasObject, visible bool) {
 	}
 }
 
-// buildLeftBar is the full-height left gutter. The console toggle sits at the
-// top; the log toggle is pinned to the bottom (aligned with the log pane), so
-// the log needs no chevron of its own. Both light when their pane is open.
-func (g *GUIApp) buildLeftBar() fyne.CanvasObject {
-	g.leftToolIcon = newToolIcon(iconConsole, false, func() {
-		g.leftCollapsed = !g.leftCollapsed
-		g.applyWorkbenchCollapseState()
-	})
-	g.logToolIcon = newToolIcon(iconLog, false, func() {
-		g.logCollapsed = !g.logCollapsed
-		g.applyWorkbenchCollapseState()
-	})
-	body := container.NewBorder(
-		container.NewVBox(g.leftToolIcon), // top
-		container.NewVBox(g.logToolIcon),  // bottom
-		nil, nil, nil,
-	)
-	return container.NewStack(
-		roundedRect(admColorPanelBG, 8),
-		body,
-	)
-}
-
 // buildRightIconBar is the always-visible right edge bar. The top three icons
 // switch between mutually-exclusive tool panels (install / uninstall / message,
 // lit when open); below a divider, two momentary action icons fire the reboot
@@ -845,10 +795,14 @@ func (g *GUIApp) buildRightIconBar() fyne.CanvasObject {
 	g.messageIcon = newToolIcon(iconMessage, false, func() { g.toggleRightPanel("message") })
 	rebootIcon := newToolIcon(iconReboot, true, g.rebootCurrentDevice)
 	closeIcon := newToolIcon(iconClose, true, g.closeCurrentDevice)
+	g.logToolIcon = newToolIcon(iconLog, false, func() {
+		g.logCollapsed = !g.logCollapsed
+		g.applyWorkbenchCollapseState()
+	})
 	return iconBarColumn(
 		g.installIcon, g.uninstallIcon, g.messageIcon,
 		iconBarDivider(),
-		rebootIcon, closeIcon,
+		rebootIcon, closeIcon, iconBarDivider(), g.logToolIcon,
 	)
 }
 
@@ -869,7 +823,7 @@ func iconBarDivider() fyne.CanvasObject {
 func (g *GUIApp) buildLogRail() fyne.CanvasObject {
 	g.logRailSummary = canvas.NewText(g.logCollapsedSummary(), admColorMuted)
 	g.logRailSummary.TextSize = 12
-	// Expand/collapse is driven by the log icon in the left gutter, so the rail
+	// Expand/collapse is driven by the log icon in the right rail, so the rail
 	// only shows the summary.
 	return collapsedBar(container.NewBorder(nil, nil, g.logRailSummary, nil, nil))
 }
@@ -899,144 +853,6 @@ func (g *GUIApp) buildTopBar() fyne.CanvasObject {
 	return topSurface(container.NewBorder(nil, nil, title, toolDetailsButton, status))
 }
 
-func (g *GUIApp) buildDevicePanel() fyne.CanvasObject {
-	g.deviceSummary = widget.NewLabelWithStyle("设备：检测中", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	g.deviceList = widget.NewList(
-		func() int { return len(g.entries) },
-		func() fyne.CanvasObject {
-			name := canvas.NewText("", theme.ForegroundColor())
-			name.TextStyle = fyne.TextStyle{Bold: true}
-			name.TextSize = 13
-			detail := canvas.NewText("", theme.ForegroundColor())
-			detail.TextSize = 12
-			return container.NewVBox(name, detail)
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			texts := obj.(*fyne.Container).Objects
-			name := texts[0].(*canvas.Text)
-			detail := texts[1].(*canvas.Text)
-			entry := g.entries[id]
-			prefix := ""
-			if entry.Key == g.currentDeviceKey {
-				prefix = "主目标 "
-			}
-			name.Text = prefix + entryPrimary(entry)
-			name.Color = theme.ForegroundColor()
-			detail.Text = entryDetail(entry)
-			detail.Color = theme.ForegroundColor()
-			name.Refresh()
-			detail.Refresh()
-			g.deviceList.SetItemHeight(id, deviceListItemHeight)
-		},
-	)
-	g.deviceList.HideSeparators = true
-	g.deviceList.OnSelected = func(id widget.ListItemID) {
-		if id < 0 || id >= len(g.entries) {
-			return
-		}
-		g.selectedKey = g.entries[id].Key
-		g.updateSelectedLabel()
-	}
-	g.deviceList.OnUnselected = func(id widget.ListItemID) {
-		g.selectedKey = ""
-		g.updateSelectedLabel()
-	}
-
-	refreshButton := widget.NewButton("重新扫描", func() {
-		g.refreshAsync(true)
-	})
-	refreshButton.Importance = widget.MediumImportance
-
-	setTargetButton := widget.NewButton("设为主目标", func() {
-		entry, ok := g.selectedEntry()
-		if !ok {
-			g.showInfo("请先选择一台可用设备。")
-			return
-		}
-		if entry.Active != nil && entry.Active.State == "device" {
-			g.runAction("设为主目标 "+entry.Label, func() error {
-				return g.backend.GUISetCurrentDevice(entry.Key)
-			})
-			return
-		}
-		g.showInfo("只能把 state=device 的设备设为主目标。未启动或 offline 的设备请先处理。")
-	})
-	setTargetButton.Importance = widget.HighImportance
-
-	startButton := widget.NewButton("启动", func() {
-		entry, ok := g.selectedEntry()
-		if !ok {
-			g.showInfo("请先选择一个未启动的模拟器。")
-			return
-		}
-		if entry.AVD != nil && !entry.Running {
-			g.runAction("启动 "+entry.AVD.Name, func() error {
-				return g.backend.GUIStartAVD(entry.AVD.Name)
-			})
-			return
-		}
-		g.showInfo("请选择未启动的模拟器；正在运行的设备不需要启动。")
-	})
-	startButton.Importance = widget.HighImportance
-
-	createButton := widget.NewButton("创建模拟器", g.showCreateAVDDialog)
-	createButton.Importance = widget.HighImportance
-	refreshScreenButton := widget.NewButton("刷新画面", g.refreshControlScreensAsync)
-	refreshScreenButton.Importance = widget.HighImportance
-	batchStartButton := widget.NewButton("批量启动", g.showBatchStartAVDDialog)
-	batchStartButton.Importance = widget.HighImportance
-	deleteButton := widget.NewButton("删除", g.showDeleteAVDDialog)
-	deleteButton.Importance = widget.DangerImportance
-	batchDeleteButton := widget.NewButton("批量删除", g.showBatchDeleteAVDDialog)
-	batchDeleteButton.Importance = widget.DangerImportance
-
-	selectReadyButton := widget.NewButton("选中可用", func() {
-		g.selectControlEntries(func(entry core.DeviceEntry) bool {
-			return entry.Active != nil && entry.Active.State == "device"
-		})
-	})
-	selectReadyButton.Importance = widget.MediumImportance
-	selectStoppedButton := widget.NewButton("选中未启动", func() {
-		g.selectControlEntries(func(entry core.DeviceEntry) bool {
-			return entry.AVD != nil && !entry.Running
-		})
-	})
-	selectStoppedButton.Importance = widget.MediumImportance
-	clearSelectionButton := widget.NewButton("清空选择", func() {
-		g.controlSelected = map[string]bool{}
-		g.selectedKey = ""
-		g.updateSelectedLabel()
-		g.renderControlCenter()
-	})
-	clearSelectionButton.Importance = widget.MediumImportance
-
-	g.registerActionButtons(refreshButton, setTargetButton, startButton, createButton, refreshScreenButton, batchStartButton, deleteButton, batchDeleteButton, selectReadyButton, selectStoppedButton, clearSelectionButton)
-
-	actions := container.NewVBox(
-		g.deviceSummary,
-		sectionTitle("设备墙"),
-		refreshButton,
-		refreshScreenButton,
-		sectionTitle("选择"),
-		selectReadyButton,
-		selectStoppedButton,
-		clearSelectionButton,
-		sectionTitle("模拟器"),
-		createButton,
-		batchStartButton,
-		sectionTitle("当前设备"),
-		setTargetButton,
-		startButton,
-		sectionTitle("危险操作"),
-		deleteButton,
-		batchDeleteButton,
-	)
-
-	// The left edge icon bar is the collapse control; the panel header carries
-	// no collapse button of its own.
-	return panelSurface("控制台", "筛选、批量、创建", container.NewScroll(container.NewPadded(actions)))
-}
-
 func (g *GUIApp) showToolHealthDialog() {
 	statuses := g.toolStatuses
 	if len(statuses) == 0 {
@@ -1064,6 +880,9 @@ func (g *GUIApp) showToolHealthDialog() {
 		installButton.Disable()
 	}
 	closeButton := compactButton("关闭", nil)
+	permissionButton := compactButton("辅助功能授权", func() {
+		g.showAccessibilityPermissionDialog("")
+	})
 	list := container.NewVScroll(container.NewVBox(rows...))
 	list.SetMinSize(fyne.NewSize(720, 280))
 
@@ -1072,7 +891,7 @@ func (g *GUIApp) showToolHealthDialog() {
 	scriptHint := widget.NewLabel(bootstrapHint(bootstrap))
 	scriptHint.Wrapping = fyne.TextWrapWord
 	scriptHint.Importance = widget.LowImportance
-	footer := container.NewBorder(nil, nil, mutedText("Android SDK / Homebrew / PATH 检测结果"), container.NewHBox(installButton, refreshButton, closeButton), nil)
+	footer := container.NewVBox(mutedText("Android SDK / Homebrew / PATH 检测结果"), container.NewCenter(container.NewHBox(permissionButton, installButton, refreshButton, closeButton)))
 	content := container.NewStack(
 		roundedRect(admColorPanelBG, 10),
 		container.NewPadded(container.NewBorder(
@@ -1340,72 +1159,83 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	g.controlCards = map[string]*controlCardView{}
 	g.controlRealtimeStops = map[string]func(){}
 
-	refreshButton := compactButton("扫描", func() {
-		g.refreshAsync(false)
-	})
-	refreshScreensButton := compactButton("画面", g.refreshControlScreensAsync)
-	nativeWallButton := compactButton("外部窗", func() {
-		g.openExternalDeviceWindows()
-	})
+	refreshButton := compactButton("重新扫描", func() { g.refreshAsync(false) })
+	refreshScreensButton := compactButton("刷新画面", g.refreshControlScreensAsync)
+	nativeWallButton := compactButton("外部窗", g.openExternalDeviceWindows)
+	createButton := compactButton("创建模拟器", g.showCreateAVDDialog)
 	densitySelect := widget.NewSelect(controlDensityLabels(), func(label string) {
 		g.controlDensity = controlDensityKeyByLabel(label)
 		g.renderControlCenter()
 	})
 	densitySelect.SetSelected(controlDensityLabel(g.controlDensity))
-	densityControl := compactSelectBox(densitySelect, controlDensitySelectWidth)
-	selectReadyButton := compactButton("可用", func() {
-		g.selectControlEntries(func(entry core.DeviceEntry) bool {
-			return entry.Active != nil && entry.Active.State == "device"
-		})
+	selectionButton := compactButton("选择", nil)
+	selectionButton.SetIcon(theme.MenuDropDownIcon())
+	selectionButton.OnTapped = func() {
+		menu := fyne.NewMenu("选择",
+			fyne.NewMenuItem("选中可用设备", func() {
+				g.selectControlEntries(func(entry core.DeviceEntry) bool { return entry.Active != nil && entry.Active.State == "device" })
+			}),
+			fyne.NewMenuItem("选中未启动模拟器", func() {
+				g.selectControlEntries(func(entry core.DeviceEntry) bool { return entry.AVD != nil && !entry.Running })
+			}),
+			fyne.NewMenuItem("清空选择", func() {
+				g.controlSelected = map[string]bool{}
+				g.updateSelectedLabel()
+				g.renderControlCenter()
+			}),
+		)
+		driver := g.app.Driver()
+		popup := widget.NewPopUpMenu(menu, driver.CanvasForObject(selectionButton))
+		position := driver.AbsolutePositionForObject(selectionButton)
+		popup.ShowAtPosition(position.Add(fyne.NewPos(0, selectionButton.Size().Height)))
+	}
+	targetButton := compactButton("设为主目标", func() {
+		entries := g.selectedControlEntries()
+		if len(entries) != 1 || entries[0].Active == nil || entries[0].Active.State != "device" {
+			g.showInfo("请仅勾选一台可用设备，再设为主目标。")
+			return
+		}
+		entry := entries[0]
+		g.runAction("设为主目标 "+entry.Label, func() error { return g.backend.GUISetCurrentDevice(entry.Key) })
 	})
-	clearSelectionButton := compactButton("清空", func() {
-		g.controlSelected = map[string]bool{}
-		g.renderControlCenter()
-	})
-	startSelectedButton := compactButton("启动", func() {
+	startSelectedButton := compactButton("启动选中", func() {
 		names := g.selectedStoppedAVDNames()
 		if len(names) == 0 {
-			g.showInfo("勾选项中没有未运行的 AVD。")
+			g.showInfo("请勾选要启动的未运行模拟器。")
 			return
 		}
-		g.runAction(fmt.Sprintf("启动选中 %d 个 AVD", len(names)), func() error {
-			return g.backend.GUIStartAVDs(names)
-		})
+		g.runAction(fmt.Sprintf("启动选中 %d 个 AVD", len(names)), func() error { return g.backend.GUIStartAVDs(names) })
 	})
-	stopSelectedButton := compactButton("关机", func() {
+	stopSelectedButton := compactButton("关闭选中", func() {
 		keys := g.selectedRunningEmulatorKeys()
 		if len(keys) == 0 {
-			g.showInfo("勾选项中没有运行中的模拟器。")
+			g.showInfo("请勾选要关闭的运行中模拟器。")
 			return
 		}
-		g.confirmAction("确认批量关机", fmt.Sprintf("将关闭 %d 个运行中的模拟器。", len(keys)), func() {
-			g.runAction(fmt.Sprintf("关闭选中 %d 个模拟器", len(keys)), func() error {
-				return g.backend.GUICloseDevices(keys)
-			})
+		g.confirmAction("确认关闭选中模拟器", fmt.Sprintf("将关闭 %d 个勾选的运行中模拟器。", len(keys)), func() {
+			g.runAction(fmt.Sprintf("关闭选中 %d 个模拟器", len(keys)), func() error { return g.backend.GUICloseDevices(keys) })
 		})
 	})
+	deleteButton := compactButton("删除选中", g.showSelectedDeleteAVDDialog)
+	deleteButton.Importance = widget.DangerImportance
+	g.registerActionButtons(refreshButton, refreshScreensButton, nativeWallButton, createButton, selectionButton, targetButton, startSelectedButton, stopSelectedButton, deleteButton)
 
-	g.registerActionButtons(refreshButton, refreshScreensButton, nativeWallButton, selectReadyButton, clearSelectionButton, startSelectedButton, stopSelectedButton)
-
-	title := canvas.NewText("设备墙", admColorText)
-	title.TextStyle = fyne.TextStyle{Bold: true}
-	title.TextSize = 14
+	refreshButton.SetText("扫描")
+	refreshScreensButton.SetText("画面")
+	createButton.SetText("创建")
+	targetButton.SetText("主目标")
 	g.controlSummary.Wrapping = fyne.TextTruncate
-	sizeLabel := mutedText("密度")
-	toolbarActions := container.NewHBox(
-		sizeLabel,
-		densityControl,
-		compactButtonBox(nativeWallButton, 66),
-		compactButtonBox(refreshButton, controlToolbarButtonWidth),
-		compactButtonBox(refreshScreensButton, controlToolbarButtonWidth),
-		compactButtonBox(selectReadyButton, controlToolbarButtonWidth),
-		compactButtonBox(clearSelectionButton, controlToolbarButtonWidth),
-		compactButtonBox(startSelectedButton, controlToolbarButtonWidth),
-		compactButtonBox(stopSelectedButton, controlToolbarButtonWidth),
+	actions := container.NewHBox(
+		compactButtonBox(refreshButton, 58), compactButtonBox(refreshScreensButton, 58),
+		mutedText("密度"), compactSelectBox(densitySelect, 78),
+		compactButtonBox(nativeWallButton, 66), compactButtonBox(createButton, 58),
+		compactButtonBox(selectionButton, 82), compactButtonBox(targetButton, 70),
+		compactButtonBox(startSelectedButton, 86), compactButtonBox(stopSelectedButton, 86),
+		compactButtonBox(deleteButton, 86),
 	)
-	toolbar := controlToolbar(
-		container.NewBorder(nil, nil, title, nil, g.controlSummary),
-		toolbarActions,
+	toolbar := container.NewBorder(nil, nil, nil,
+		container.NewGridWrap(fyne.NewSize(240, controlCompactControlHeight), g.controlSummary),
+		controlToolbar(nil, actions),
 	)
 	panel := panelSurface("", "", container.NewBorder(
 		toolbar,
@@ -1844,7 +1674,7 @@ func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 		}
 		g.logFollow = g.logScrollAtBottom()
 	}
-	// Collapse is driven by the log icon in the left gutter; the header keeps
+	// Collapse is driven by the log icon in the right rail; the header keeps
 	// only the clear/copy actions.
 	header := container.NewBorder(nil, nil, container.NewVBox(sectionTitle("任务/日志"), mutedText("最近 200 行，可复制")), container.NewHBox(clearButton, copyButton), nil)
 	return panelSurface("", "", container.NewBorder(
@@ -1893,7 +1723,6 @@ func (g *GUIApp) applyState(state core.GUIState, revealTop bool) {
 	g.lastAPKSource = state.LastAPKSource
 	g.mirrorAlwaysOnTop = state.MirrorAlwaysOnTop
 	g.currentLabel.SetText("主目标：" + state.CurrentDevice)
-	g.deviceSummary.SetText(deviceSummaryText(state.Devices))
 	g.toolSummary.SetText("工具：" + compactToolStatus(state.Tools))
 	g.toolDetails = detailedToolStatus(state.Tools)
 	g.toolStatuses = append([]core.ToolStatus(nil), state.Tools...)
@@ -1905,50 +1734,35 @@ func (g *GUIApp) applyState(state core.GUIState, revealTop bool) {
 		}
 	}
 	g.restoreSelection()
-	g.deviceList.Refresh()
-	if revealTop && len(g.entries) > 0 {
-		g.deviceList.ScrollToTop()
-	}
 	if g.controlGrid != nil {
 		g.renderControlCenter()
 	}
 }
 
 func (g *GUIApp) restoreSelection() {
-	if g.selectedKey == "" {
-		g.updateSelectedLabel()
-		return
+	valid := map[string]bool{}
+	for _, entry := range g.entries {
+		valid[entry.Key] = true
 	}
-	for i, entry := range g.entries {
-		if entry.Key == g.selectedKey {
-			g.deviceList.Select(i)
-			g.updateSelectedLabel()
-			return
+	for key := range g.controlSelected {
+		if !valid[key] {
+			delete(g.controlSelected, key)
 		}
 	}
-	g.selectedKey = ""
-	g.deviceList.UnselectAll()
 	g.updateSelectedLabel()
 }
 
-func (g *GUIApp) selectedEntry() (core.DeviceEntry, bool) {
-	if g.selectedKey == "" {
-		return core.DeviceEntry{}, false
-	}
-	for _, entry := range g.entries {
-		if entry.Key == g.selectedKey {
-			return entry, true
-		}
-	}
-	return core.DeviceEntry{}, false
-}
-
 func (g *GUIApp) updateSelectedLabel() {
-	if entry, ok := g.selectedEntry(); ok {
-		g.selectedLabel.SetText("选中：" + entry.Label)
+	entries := g.selectedControlEntries()
+	if len(entries) == 0 {
+		g.selectedLabel.SetText("选中：未选择")
 		return
 	}
-	g.selectedLabel.SetText("选中：未选择")
+	if len(entries) == 1 {
+		g.selectedLabel.SetText("选中：" + entries[0].Label)
+		return
+	}
+	g.selectedLabel.SetText(fmt.Sprintf("选中：%d 台", len(entries)))
 }
 
 func (g *GUIApp) runAction(name string, fn func() error) {
@@ -1959,7 +1773,10 @@ func (g *GUIApp) runAction(name string, fn func() error) {
 		fyne.Do(func() {
 			g.endTask(btn)
 			if err != nil {
-				if core.IsAccessibilityPermissionPrompted(err) {
+				if core.IsAccessibilityPermissionRequired(err) {
+					g.appendLog("INFO", "%s：%v", name, err)
+					g.showAccessibilityPermissionDialog(err.Error())
+				} else if core.IsAccessibilityPermissionPrompted(err) {
 					g.appendLog("INFO", "%s：%v", name, err)
 				} else {
 					g.appendLog("ERROR", "失败：%s：%v", name, err)
@@ -2304,8 +2121,41 @@ func (g *GUIApp) showInfo(message string) {
 }
 
 func (g *GUIApp) showError(err error) {
+	if core.IsAccessibilityPermissionRequired(err) {
+		g.appendLog("INFO", "%v", err)
+		g.showAccessibilityPermissionDialog(err.Error())
+		return
+	}
 	g.appendLog("ERROR", "%v", err)
 	g.showMessageDialog("错误", err.Error(), true)
+}
+
+func (g *GUIApp) showAccessibilityPermissionDialog(message string) {
+	if message == "" {
+		message = "排列和控制外部窗口需要 macOS 辅助功能权限。\n\n" + core.AccessibilityPermissionGuide
+	}
+	body := widget.NewLabel(message)
+	body.Wrapping = fyne.TextWrapWord
+	var d dialog.Dialog
+	openButton := widget.NewButton("打开系统设置", func() {
+		settingsURL, err := url.Parse(core.AccessibilitySettingsURL)
+		if err == nil {
+			err = g.app.OpenURL(settingsURL)
+		}
+		if err != nil {
+			g.showError(fmt.Errorf("打开系统设置失败：%w", err))
+		}
+	})
+	openButton.Importance = widget.HighImportance
+	closeButton := widget.NewButton("稍后", func() { d.Hide() })
+	checkButton := widget.NewButton("已开启，重新检查", func() {
+		d.Hide()
+		g.refreshAsync(false)
+	})
+	content := container.NewBorder(nil, container.NewCenter(container.NewHBox(closeButton, checkButton, openButton)), nil, nil, container.NewPadded(body))
+	d = dialog.NewCustomWithoutButtons("开启辅助功能权限", content, g.activeDialogWindow())
+	d.Resize(fyne.NewSize(680, 320))
+	d.Show()
 }
 
 func (g *GUIApp) showMessageDialog(title, message string, danger bool) {
@@ -2520,19 +2370,15 @@ func (g *GUIApp) renderControlCenter() {
 }
 
 func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpec) fyne.CanvasObject {
-	selected := widget.NewCheck("选择", func(checked bool) {
+	selected := widget.NewCheck("选择", nil)
+	selected.SetChecked(g.controlSelected[entry.Key])
+	selected.OnChanged = func(checked bool) {
 		if g.controlSelected == nil {
 			g.controlSelected = map[string]bool{}
 		}
 		g.controlSelected[entry.Key] = checked
-		if checked {
-			g.selectedKey = entry.Key
-		} else if g.selectedKey == entry.Key {
-			g.selectedKey = ""
-		}
 		g.updateSelectedLabel()
-	})
-	selected.SetChecked(g.controlSelected[entry.Key])
+	}
 
 	titleText := controlCardTitle(entry)
 	title := widget.NewLabelWithStyle(titleText, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -2966,13 +2812,15 @@ func (g *GUIApp) restoreControlCardSnapshots(snapshots map[string]controlCardSna
 }
 
 func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObject {
-	selected := widget.NewCheck("选择", func(checked bool) {
+	selected := widget.NewCheck("选择", nil)
+	selected.SetChecked(g.controlSelected[entry.Key])
+	selected.OnChanged = func(checked bool) {
 		if g.controlSelected == nil {
 			g.controlSelected = map[string]bool{}
 		}
 		g.controlSelected[entry.Key] = checked
-	})
-	selected.SetChecked(g.controlSelected[entry.Key])
+		g.updateSelectedLabel()
+	}
 	title := widget.NewLabelWithStyle(controlCardTitle(entry), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	status := widget.NewLabel(controlCardStatus(entry))
 	detail := widget.NewLabel(entryDetail(entry))
@@ -3669,6 +3517,7 @@ func (g *GUIApp) selectControlEntries(match func(core.DeviceEntry) bool) {
 	for _, entry := range g.entries {
 		g.controlSelected[entry.Key] = match(entry)
 	}
+	g.updateSelectedLabel()
 	g.renderControlCenter()
 }
 
@@ -3732,192 +3581,52 @@ func (g *GUIApp) showCreateAVDDialog() {
 	})
 }
 
-func (g *GUIApp) showBatchStartAVDDialog() {
-	g.runModalLoad("读取可启动模拟器", func() (any, error) {
-		return g.backend.GUIAVDActionTargets()
-	}, func(value any) {
-		targets := value.([]core.GUIAVDActionTarget)
-		checks := make(map[string]*widget.Check, len(targets))
-		rows := make([]fyne.CanvasObject, 0, len(targets))
-		selectableCount := 0
-		for _, target := range targets {
-			if !target.CanStart {
-				continue
-			}
-			target := target
-			check := widget.NewCheck(target.Label, nil)
-			checks[target.Name] = check
-			rows = append(rows, check)
-			selectableCount++
+func (g *GUIApp) selectedControlEntries() []core.DeviceEntry {
+	var entries []core.DeviceEntry
+	for _, entry := range g.entries {
+		if g.controlSelected[entry.Key] {
+			entries = append(entries, entry)
 		}
-		if selectableCount == 0 {
-			g.showInfo("没有可启动的模拟器。")
-			return
-		}
-
-		selectAll := widget.NewCheck("全选可启动模拟器", func(checked bool) {
-			for _, check := range checks {
-				check.SetChecked(checked)
-			}
-		})
-		info := widget.NewLabel("只会启动下面勾选的未运行 AVD。")
-		info.Wrapping = fyne.TextWrapWord
-		list := container.NewVScroll(container.NewVBox(rows...))
-		content := container.NewGridWrap(fyne.NewSize(760, 360),
-			container.NewBorder(
-				container.NewVBox(info, selectAll),
-				nil,
-				nil,
-				nil,
-				list,
-			),
-		)
-
-		g.showActionDialog("批量启动模拟器", "启动", false, content, func() {
-			selected := checkedAVDNames(targets, checks)
-			if len(selected) == 0 {
-				g.showInfo("请至少选择一个模拟器。")
-				return
-			}
-			g.runAction(fmt.Sprintf("批量启动 %d 个模拟器", len(selected)), func() error {
-				return g.backend.GUIStartAVDs(selected)
-			})
-		})
-	})
+	}
+	return entries
 }
 
-func (g *GUIApp) showDeleteAVDDialog() {
-	entry, ok := g.selectedEntry()
-	if !ok || entry.AVD == nil {
-		g.showInfo("请先选择一个 AVD。")
+func (g *GUIApp) showSelectedDeleteAVDDialog() {
+	var names []string
+	running := false
+	for _, entry := range g.selectedControlEntries() {
+		if entry.AVD == nil {
+			continue
+		}
+		names = append(names, entry.AVD.Name)
+		running = running || entry.Running
+	}
+	if len(names) == 0 {
+		g.showInfo("请在设备墙勾选要删除的模拟器；真机不会被删除。")
 		return
 	}
-
-	nameLabel := widget.NewLabel(entry.AVD.Name)
-	nameLabel.Wrapping = fyne.TextWrapBreak
-	pathLabel := widget.NewLabel(entry.AVD.Path)
-	pathLabel.Wrapping = fyne.TextWrapBreak
-	warningText := "删除会移除这个 AVD 的配置和数据。"
-	if entry.Running {
-		warningText += " 该模拟器正在运行或 ADB offline，删除前会先强制关闭。"
+	warning := wrappedLabel("将删除以下勾选模拟器的配置和数据：")
+	list := container.NewVScroll(wrappedLabel(strings.Join(names, "\n")))
+	list.SetMinSize(fyne.NewSize(560, 160))
+	confirm := widget.NewCheck("我确认删除以上模拟器的配置和数据", nil)
+	forceClose := widget.NewCheck("关闭正在运行的模拟器后删除", nil)
+	if !running {
+		forceClose.Hide()
 	}
-	warningLabel := widget.NewLabel(warningText)
-	warningLabel.Wrapping = fyne.TextWrapWord
-	confirmCheck := widget.NewCheck("我确认删除上面这个模拟器", nil)
-	forceCloseCheck := widget.NewCheck("如果正在运行，强制关闭并删除", nil)
-
-	content := container.NewGridWrap(fyne.NewSize(720, 260),
-		container.NewVBox(
-			widget.NewForm(
-				widget.NewFormItem("名称", nameLabel),
-				widget.NewFormItem("路径", pathLabel),
-			),
-			warningLabel,
-			forceCloseCheck,
-			confirmCheck,
-		),
-	)
-
-	g.showActionDialog("删除模拟器", "删除", true, content, func() {
-		if !confirmCheck.Checked {
+	content := container.NewVBox(warning, list, forceClose, confirm)
+	g.showActionDialog("确认删除选中模拟器", "删除", true, content, func() {
+		if !confirm.Checked {
 			g.showInfo("请先勾选确认删除。")
 			return
 		}
-		if entry.Running && !forceCloseCheck.Checked {
-			g.showInfo("该模拟器正在运行或 offline，请勾选强制关闭并删除。")
+		if running && !forceClose.Checked {
+			g.showInfo("选中项包含运行中或 offline 的模拟器，请确认关闭后删除。")
 			return
 		}
-		g.runAction("删除模拟器 "+entry.AVD.Name, func() error {
-			return g.backend.GUIDeleteAVD(entry.AVD.Name, confirmCheck.Checked, forceCloseCheck.Checked)
+		g.runAction(fmt.Sprintf("批量删除 %d 个模拟器", len(names)), func() error {
+			return g.backend.GUIDeleteAVDs(names, true, forceClose.Checked)
 		})
 	})
-}
-
-func (g *GUIApp) showBatchDeleteAVDDialog() {
-	g.runModalLoad("读取可删除模拟器", func() (any, error) {
-		return g.backend.GUIAVDActionTargets()
-	}, func(value any) {
-		targets := value.([]core.GUIAVDActionTarget)
-		checks := make(map[string]*widget.Check, len(targets))
-		rows := make([]fyne.CanvasObject, 0, len(targets))
-		selectableCount := 0
-		for _, target := range targets {
-			target := target
-			check := widget.NewCheck(target.Label, nil)
-			selectableCount++
-			checks[target.Name] = check
-			rows = append(rows, check)
-		}
-		if selectableCount == 0 {
-			g.showInfo("没有可删除的模拟器。")
-			return
-		}
-
-		selectAll := widget.NewCheck("全选模拟器", func(checked bool) {
-			for _, target := range targets {
-				if target.CanDelete {
-					checks[target.Name].SetChecked(checked)
-				}
-			}
-		})
-		confirmCheck := widget.NewCheck("我确认删除勾选的模拟器", nil)
-		forceCloseCheck := widget.NewCheck("如果勾选项正在运行，强制关闭并删除", nil)
-		warning := widget.NewLabel("删除会移除 AVD 配置和数据。勾选运行中或 ADB offline 的模拟器时，会先强制关闭再删除。")
-		warning.Wrapping = fyne.TextWrapWord
-		list := container.NewVScroll(container.NewVBox(rows...))
-		content := container.NewGridWrap(fyne.NewSize(760, 420),
-			container.NewBorder(
-				container.NewVBox(warning, selectAll),
-				container.NewVBox(forceCloseCheck, confirmCheck),
-				nil,
-				nil,
-				list,
-			),
-		)
-
-		g.showActionDialog("批量删除模拟器", "删除", true, content, func() {
-			selected := checkedAVDNames(targets, checks)
-			if len(selected) == 0 {
-				g.showInfo("请至少选择一个模拟器。")
-				return
-			}
-			if !confirmCheck.Checked {
-				g.showInfo("请先勾选确认删除。")
-				return
-			}
-			if selectedHasRunningAVD(targets, selected) && !forceCloseCheck.Checked {
-				g.showInfo("勾选项包含正在运行或 offline 的模拟器，请勾选强制关闭并删除。")
-				return
-			}
-			g.runAction(fmt.Sprintf("批量删除 %d 个模拟器", len(selected)), func() error {
-				return g.backend.GUIDeleteAVDs(selected, confirmCheck.Checked, forceCloseCheck.Checked)
-			})
-		})
-	})
-}
-
-func checkedAVDNames(targets []core.GUIAVDActionTarget, checks map[string]*widget.Check) []string {
-	var selected []string
-	for _, target := range targets {
-		check := checks[target.Name]
-		if check != nil && check.Checked && (target.CanStart || target.CanDelete) {
-			selected = append(selected, target.Name)
-		}
-	}
-	return selected
-}
-
-func selectedHasRunningAVD(targets []core.GUIAVDActionTarget, selected []string) bool {
-	selectedNames := map[string]bool{}
-	for _, name := range selected {
-		selectedNames[name] = true
-	}
-	for _, target := range targets {
-		if selectedNames[target.Name] && target.Running {
-			return true
-		}
-	}
-	return false
 }
 
 func deviceTemplateCreateIDForGUI(template core.DeviceTemplate) string {

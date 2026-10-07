@@ -24,7 +24,6 @@ const (
 	dockLogMinHeight    float32 = 120 // min expanded height of the log pane
 	dockLogMaxFraction  float32 = 0.6 // log pane may take at most this fraction of height
 
-	dockLeftDefaultWidth  float32 = 248
 	dockRightDefaultWidth float32 = 380
 	dockLogDefaultHeight  float32 = 220
 )
@@ -95,15 +94,6 @@ func sideMaxWidth(total float32) float32 {
 	return max
 }
 
-// leftPaneWidth is zero when collapsed; the always-visible icon bar (a separate
-// dock column) carries the expand control, so the panel itself fully vanishes.
-func (g *GUIApp) leftPaneWidth(total float32) float32 {
-	if g.leftCollapsed {
-		return 0
-	}
-	return clampWidth(g.leftW, dockSideMinWidth, sideMaxWidth(total))
-}
-
 // rightPaneWidth is zero when no tool panel is active; otherwise the active
 // panel gets the shared right width.
 func (g *GUIApp) rightPaneWidth(total float32) float32 {
@@ -122,18 +112,6 @@ func (g *GUIApp) logPaneHeight(total float32) float32 {
 		max = dockLogMinHeight
 	}
 	return clampWidth(g.logH, dockLogMinHeight, max)
-}
-
-// resizeLeftBy grows/shrinks the left pane as its divider is dragged.
-func (g *GUIApp) resizeLeftBy(dx float32) {
-	total := float32(0)
-	if g.hDock != nil {
-		total = g.hDock.Size().Width
-	}
-	g.leftW = clampWidth(g.leftW+dx, dockSideMinWidth, sideMaxWidth(total))
-	if g.hDock != nil {
-		g.hDock.Refresh()
-	}
 }
 
 // resizeRightBy: the right divider sits to the left of the right pane, so
@@ -166,91 +144,60 @@ func (g *GUIApp) resizeLogBy(dy float32) {
 	}
 }
 
-// edgeBarLayout is the outermost workbench layout: two full-height icon gutters
-// flank the working area, JetBrains-style.
-//
-//	leftBar | gap | center | gap | rightBar
-//
-// The gutters run top-to-bottom (past the log pane), so the log's expand/collapse
-// control can live at the bottom of the left gutter. The gaps show the darker app
-// background through so each gutter reads as its own rail.
+// edgeBarLayout gives the device workbench all space up to the right tool rail.
 type edgeBarLayout struct{}
 
 func (l edgeBarLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	height := float32(0)
 	for _, obj := range objects {
-		if obj == nil || !obj.Visible() {
-			continue
-		}
-		if m := obj.MinSize(); m.Height > height {
-			height = m.Height
+		if obj != nil && obj.Visible() && obj.MinSize().Height > height {
+			height = obj.MinSize().Height
 		}
 	}
-	return fyne.NewSize(dockCenterMinWidth+2*dockIconBarWidth+2*dockIconGap, height)
+	return fyne.NewSize(dockCenterMinWidth+dockIconBarWidth+dockIconGap, height)
 }
 
 func (l edgeBarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) < 3 {
+	if len(objects) < 2 {
 		return
 	}
-	cw := size.Width - 2*dockIconBarWidth - 2*dockIconGap
-	if cw < dockCenterMinWidth {
-		cw = dockCenterMinWidth
+	width := size.Width - dockIconBarWidth - dockIconGap
+	if width < dockCenterMinWidth {
+		width = dockCenterMinWidth
 	}
-	x := float32(0)
-	x = placeCol(objects[0], x, dockIconBarWidth, size.Height) // left gutter
-	x += dockIconGap
-	x = placeCol(objects[1], x, cw, size.Height) // working area (vDock)
-	x += dockIconGap
-	placeCol(objects[2], x, dockIconBarWidth, size.Height) // right gutter
+	placeCol(objects[0], 0, width, size.Height)
+	placeCol(objects[1], width+dockIconGap, dockIconBarWidth, size.Height)
 }
 
-// horizontalDockLayout arranges the working area's upper row (inside the
-// gutters): leftPanel | leftHandle | center | rightHandle | rightPanel. A
-// collapsed panel and its handle shrink to zero width; the center device wall
-// absorbs the difference.
-type horizontalDockLayout struct {
-	g *GUIApp
-}
+// horizontalDockLayout arranges the wall, right divider and active tool panel.
+type horizontalDockLayout struct{ g *GUIApp }
 
 func (l horizontalDockLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	height := float32(0)
 	for _, obj := range objects {
-		if obj == nil || !obj.Visible() {
-			continue
-		}
-		if m := obj.MinSize(); m.Height > height {
-			height = m.Height
+		if obj != nil && obj.Visible() && obj.MinSize().Height > height {
+			height = obj.MinSize().Height
 		}
 	}
 	return fyne.NewSize(dockCenterMinWidth, height)
 }
 
 func (l horizontalDockLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) < 5 {
+	if len(objects) < 3 {
 		return
 	}
-	g := l.g
-	lw := g.leftPaneWidth(size.Width)
-	rw := g.rightPaneWidth(size.Width)
-	lh := dockHandleThickness
-	if g.leftCollapsed {
-		lh = 0
-	}
+	rw := l.g.rightPaneWidth(size.Width)
 	rh := dockHandleThickness
-	if g.rightActive == "" {
+	if l.g.rightActive == "" {
 		rh = 0
 	}
-	cw := size.Width - lw - lh - rw - rh
+	cw := size.Width - rw - rh
 	if cw < dockCenterMinWidth {
 		cw = dockCenterMinWidth
 	}
-	x := float32(0)
-	x = placeCol(objects[0], x, lw, size.Height) // left panel
-	x = placeCol(objects[1], x, lh, size.Height) // left handle
-	x = placeCol(objects[2], x, cw, size.Height) // device wall
-	x = placeCol(objects[3], x, rh, size.Height) // right handle
-	placeCol(objects[4], x, rw, size.Height)     // right panel
+	x := placeCol(objects[0], 0, cw, size.Height)
+	x = placeCol(objects[1], x, rh, size.Height)
+	placeCol(objects[2], x, rw, size.Height)
 }
 
 // placeCol positions obj at x with the given width/height and returns x+width.

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -108,7 +109,7 @@ func accessibilityToolStatus() ToolStatus {
 	return ToolStatus{
 		Name:   "macOS 辅助功能",
 		Source: "TCC",
-		Error:  "未授权或当前进程未生效。移除旧 安卓设备矩阵 权限项后重新添加 /Applications/安卓设备矩阵.app，并重启 安卓设备矩阵",
+		Error:  "未授权。请开启「系统设置 → 隐私与安全性 → 辅助功能」中的「安卓设备矩阵.app」",
 	}
 }
 
@@ -240,7 +241,7 @@ func (a *App) GUIOpenLiveMirrors(entryKeys []string) error {
 	}
 	seen := map[string]bool{}
 	opened := 0
-	var failures []string
+	var failures []error
 	for _, key := range entryKeys {
 		key = strings.TrimSpace(key)
 		if key == "" || seen[key] {
@@ -248,19 +249,19 @@ func (a *App) GUIOpenLiveMirrors(entryKeys []string) error {
 		}
 		seen[key] = true
 		if err := a.GUIOpenLiveMirror(key); err != nil {
-			failures = append(failures, fmt.Sprintf("%s：%s", key, firstLine(err.Error())))
+			failures = append(failures, fmt.Errorf("%s：%w", key, err))
 			continue
 		}
 		opened++
 	}
 	if len(failures) > 0 {
-		return fmt.Errorf("已打开 %d 个实时镜像，失败 %d 个：%s", opened, len(failures), strings.Join(failures, "；"))
+		return fmt.Errorf("已打开 %d 个实时镜像，失败 %d 个：%w", opened, len(failures), errors.Join(failures...))
 	}
 	if opened == 0 {
 		return fmt.Errorf("没有打开任何实时镜像")
 	}
 	if err := a.GUITileEmulatorWindows(entryKeys, 0); err != nil {
-		return fmt.Errorf("已打开 %d 个实时镜像，但排列外部窗口失败：%s", opened, firstLine(err.Error()))
+		return fmt.Errorf("已打开 %d 个实时镜像，但排列外部窗口失败：%w", opened, err)
 	}
 	return nil
 }

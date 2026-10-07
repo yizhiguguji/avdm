@@ -827,7 +827,7 @@ func focusEmulatorWindowNative(avdName, serial string) error {
 	case "permission-prompted":
 		return &AccessibilityPermissionPromptedError{Operation: "聚焦外部模拟器窗口"}
 	case "permission":
-		return fmt.Errorf("聚焦外部模拟器窗口需要 macOS 辅助功能权限。当前进程仍未被系统识别为已授权，请移除旧 安卓设备矩阵 权限项后重新添加 /Applications/安卓设备矩阵.app，并重启 安卓设备矩阵")
+		return &AccessibilityPermissionRequiredError{Operation: "聚焦外部模拟器窗口"}
 	case "not-found":
 		if pid, ok := qemuPIDForAVD(avdName); ok {
 			return focusEmulatorWindowByPID(pid, avdName, serial)
@@ -847,7 +847,7 @@ func focusEmulatorWindowByPID(pid int, avdName, serial string) error {
 	case "permission-prompted":
 		return &AccessibilityPermissionPromptedError{Operation: "聚焦外部模拟器窗口"}
 	case "permission":
-		return fmt.Errorf("聚焦外部模拟器窗口需要 macOS 辅助功能权限。当前进程仍未被系统识别为已授权，请移除旧 安卓设备矩阵 权限项后重新添加 /Applications/安卓设备矩阵.app，并重启 安卓设备矩阵")
+		return &AccessibilityPermissionRequiredError{Operation: "聚焦外部模拟器窗口"}
 	case "not-found":
 		return fmt.Errorf("已找到 qemu 进程 pid=%d（AVD=%s, serial=%s），但该进程没有向 macOS 暴露可操作窗口", pid, avdName, serial)
 	default:
@@ -864,7 +864,7 @@ func focusProcessWindowNative(pid int) error {
 	case "permission-prompted":
 		return &AccessibilityPermissionPromptedError{Operation: "聚焦外部窗口"}
 	case "permission":
-		return fmt.Errorf("聚焦外部窗口需要 macOS 辅助功能权限。当前进程仍未被系统识别为已授权，请移除旧 安卓设备矩阵 权限项后重新添加 /Applications/安卓设备矩阵.app，并重启 安卓设备矩阵")
+		return &AccessibilityPermissionRequiredError{Operation: "聚焦外部窗口"}
 	case "not-found":
 		return fmt.Errorf("已找到进程 pid=%d，但该进程没有向 macOS 暴露可操作窗口", pid)
 	default:
@@ -881,7 +881,7 @@ func resizeProcessWindowNative(pid int, width, height int) error {
 	case "permission-prompted":
 		return &AccessibilityPermissionPromptedError{Operation: "调整外部窗口尺寸"}
 	case "permission":
-		return fmt.Errorf("调整外部窗口尺寸需要 macOS 辅助功能权限。当前进程仍未被系统识别为已授权，请移除旧 安卓设备矩阵 权限项后重新添加 /Applications/安卓设备矩阵.app，并重启 安卓设备矩阵")
+		return &AccessibilityPermissionRequiredError{Operation: "调整外部窗口尺寸"}
 	case "not-found":
 		return fmt.Errorf("已找到进程 pid=%d，但该进程没有向 macOS 暴露可操作窗口", pid)
 	case "invalid-size":
@@ -912,7 +912,7 @@ func tileEmulatorWindowsNative(targets []emulatorWindowTarget, columns int) erro
 	case "permission-prompted":
 		return &AccessibilityPermissionPromptedError{Operation: "平铺外部模拟器窗口"}
 	case "permission":
-		return fmt.Errorf("平铺外部模拟器窗口需要 macOS 辅助功能权限。当前进程仍未被系统识别为已授权，请移除旧 安卓设备矩阵 权限项后重新添加 /Applications/安卓设备矩阵.app，并重启 安卓设备矩阵")
+		return &AccessibilityPermissionRequiredError{Operation: "平铺外部模拟器窗口"}
 	case "not-found":
 		if err := tileEmulatorWindowsByPIDs(targets, columns); err == nil {
 			return nil
@@ -945,7 +945,7 @@ func tileEmulatorWindowsByPIDs(targets []emulatorWindowTarget, columns int) erro
 	case "permission-prompted":
 		return &AccessibilityPermissionPromptedError{Operation: "平铺外部模拟器窗口"}
 	case "permission":
-		return fmt.Errorf("平铺外部模拟器窗口需要 macOS 辅助功能权限。当前进程仍未被系统识别为已授权，请移除旧 安卓设备矩阵 权限项后重新添加 /Applications/安卓设备矩阵.app，并重启 安卓设备矩阵")
+		return &AccessibilityPermissionRequiredError{Operation: "平铺外部模拟器窗口"}
 	case "not-found":
 		return fmt.Errorf("已找到 qemu 进程，但进程没有向 macOS 暴露可操作窗口")
 	default:
@@ -977,7 +977,7 @@ func tileProcessWindowsNative(pids []int, columns int) error {
 	case "permission-prompted":
 		return &AccessibilityPermissionPromptedError{Operation: "平铺外部窗口"}
 	case "permission":
-		return fmt.Errorf("平铺外部窗口需要 macOS 辅助功能权限。当前进程仍未被系统识别为已授权，请移除旧 安卓设备矩阵 权限项后重新添加 /Applications/安卓设备矩阵.app，并重启 安卓设备矩阵")
+		return &AccessibilityPermissionRequiredError{Operation: "平铺外部窗口"}
 	case "not-found":
 		return fmt.Errorf("已找到进程，但没有找到可操作外部窗口")
 	default:
