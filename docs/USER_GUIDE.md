@@ -132,8 +132,8 @@ The wall is for status and selection:
 
 Real-time mirroring requires a callable local `scrcpy` binary. 安卓设备矩阵 launches
 scrcpy with a per-device serial, a stable window title, no audio, UHID keyboard
-input, and a per-device log file. It uses a compact `288x624` default window
-size for physical devices and resizes an existing scrcpy process for the same
+input, and a per-device log file. It uses a compact 624-point outer window height with a natural device aspect
+ratio for physical devices and resizes an existing scrcpy process for the same
 serial instead of opening a duplicate mirror. It does not use `--time-limit`.
 
 The `外部窗` action can focus native Android Emulator windows and open scrcpy
@@ -246,7 +246,7 @@ legacy external emulator window focus or tiling helpers.
 
 勾选表示批量范围，主目标表示顶部「设备操作」菜单中安装、卸载、输入、重启和关闭的单台目标。批量启动、关闭及删除会列出可执行目标和跳过原因；失败结果可仅重试失败设备。主目标切换后会清空上一设备的包列表，重新加载后再卸载。
 
-「外部窗」统一外部窗口外框尺寸，设备内容保持比例显示。当前使用 scrcpy 4.0 的解除窗口比例锁及 letterbox 能力；旧的本应用镜像会自动重开以应用新参数。未勾选时打开全部在线设备；明确勾选但没有合格设备时只显示原因，不会扩大范围。排列失败时使用「打开系统设置」进入辅助功能配置，手动授权后点击「已开启，重新检查」继续排列原窗口。若当前进程仍未获得权限，按引导重新添加应用并重启。
+「外部窗」统一窗口高度（默认624点），宽度按设备画面比例计算。保留 scrcpy 默认比例锁，避免强制等宽形成左右黑框，不拉伸或裁切画面；旧的本应用镜像会自动重开以应用新参数。未勾选时打开全部在线设备；明确勾选但没有合格设备时只显示原因，不会扩大范围。排列失败时使用「打开系统设置」进入辅助功能配置，手动授权后点击「已开启，重新检查」继续排列原窗口。若当前进程仍未获得权限，按引导重新添加应用并重启。
 
 创建模拟器时如无系统镜像，可选择下载推荐镜像。下载前需接受 Android SDK 许可，也可在 Android Studio SDK Manager 安装后返回创建。
 

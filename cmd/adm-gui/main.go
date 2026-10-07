@@ -492,7 +492,8 @@ func (g *GUIApp) buildLogRail() fyne.CanvasObject {
 	details := compactButton("检查工具", g.showToolHealthDialog)
 	left := container.New(centeredRowLayout{}, details, compactStatus(g.toolSummary, 120), compactStatus(g.busyLabel, 190), g.progress)
 	right := container.New(centeredRowLayout{}, compactStatus(g.currentLabel, 200), compactStatus(g.selectedLabel, 180))
-	return collapsedBar(container.NewThemeOverride(container.NewBorder(nil, nil, left, right, nil), captionTheme{g.app.Settings().Theme()}))
+	row := container.NewThemeOverride(container.NewBorder(nil, nil, left, right, nil), captionTheme{g.app.Settings().Theme()})
+	return collapsedBar(container.New(workbenchRowInsetLayout{}, row))
 }
 
 func (g *GUIApp) buildTopBar() fyne.CanvasObject {

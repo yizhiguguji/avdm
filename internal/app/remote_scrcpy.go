@@ -150,12 +150,11 @@ func scrcpyArgs(serial, windowTitle string, alwaysOnTop bool) []string {
 		"--max-fps=60",
 		"--video-codec=h264",
 		"--no-audio",
-		"--no-window-aspect-ratio-lock",
 		"--render-fit=letterbox",
 		"--keyboard=uhid",
 		"--window-title=" + windowTitle,
-		fmt.Sprintf("--window-width=%d", scrcpyWindowWidth),
-		fmt.Sprintf("--window-height=%d", scrcpyWindowHeight),
+		"--window-width=0",
+		fmt.Sprintf("--window-height=%d", scrcpyWindowHeight-30),
 		"--no-clipboard-autosync",
 		"--keep-active",
 		"--stay-awake",
@@ -243,6 +242,24 @@ func stopPreviousScrcpyWindow(pid int) error {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	// Some SDL mirrors ignore SIGTERM. Only force-close an app-owned
+	// scrcpy still associated with this PID; never kill a foreign process.
+	command, readErr := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+	if readErr != nil {
+		return nil
+	}
+	if !looksLikeScrcpyCommand(strconv.Itoa(pid)+" "+string(command)) || !strings.Contains(string(command), "--window-title=安卓设备矩阵 - ") {
+		return fmt.Errorf("旧独立窗未退出，请关闭后重试")
+	}
+	if err := process.Kill(); err != nil {
+		return fmt.Errorf("关闭旧独立窗失败：%w", err)
+	}
+	for attempt := 0; attempt < 20; attempt++ {
+		if exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "pid=").Run() != nil {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	return fmt.Errorf("旧独立窗未退出，请关闭后重试")
 }
 
@@ -278,7 +295,7 @@ func scrcpyLogExcerpt(path string) string {
 }
 
 func prepareScrcpyWindow(pid int) error {
-	if err := resizeProcessWindow(pid, scrcpyWindowWidth, scrcpyWindowHeight); err != nil {
+	if err := resizeProcessWindow(pid, 0, scrcpyWindowHeight); err != nil {
 		return fmt.Errorf("实时镜像已打开，但统一窗口尺寸失败：%w", err)
 	}
 	if err := focusProcessWindow(pid); err != nil {
@@ -287,9 +304,9 @@ func prepareScrcpyWindow(pid int) error {
 	return nil
 }
 
-// Old app-owned mirrors retain scrcpy's aspect lock, so they must be reopened
-// before the new geometry contract can apply. Never replace unrelated mirrors.
+// Replace app-owned fixed-width mirrors with natural-aspect windows.
+// Keep a common height while allowing each device its own width.
 func scrcpyCommandUniformGeometry(command string) bool {
 	fields := strings.Fields(command)
-	return slices.Contains(fields, "--no-window-aspect-ratio-lock") && slices.Contains(fields, "--render-fit=letterbox")
+	return !slices.Contains(fields, "--no-window-aspect-ratio-lock") && slices.Contains(fields, "--window-width=0") && slices.Contains(fields, "--render-fit=letterbox")
 }

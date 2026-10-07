@@ -132,7 +132,8 @@ func resizeProcessWindow(pid int, width, height int) error {
 	if pid <= 0 {
 		return fmt.Errorf("无效的进程 pid：%d", pid)
 	}
-	if width <= 0 || height <= 0 {
+	// A zero width preserves the current content aspect at the requested height.
+	if width < 0 || height <= 0 {
 		return fmt.Errorf("无效的窗口尺寸：%dx%d", width, height)
 	}
 	return resizeProcessWindowNative(pid, width, height)

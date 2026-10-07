@@ -426,13 +426,13 @@ static int set_ax_window_position_verified(AXUIElementRef win, CGPoint requested
  return 2;
 }
 
-static CGSize adm_uniform_tile_size(double availableW, double availableH, int cols, int rows, double auxiliaryW) {
+static CGSize adm_uniform_tile_size(double availableW, double availableH, int cols, int rows, double auxiliaryW, double nominalW) {
  if (cols<1) {cols=1;} if (rows<1) {rows=1;}
  double maxW=availableW/cols-6.0-auxiliaryW;
  double maxH=availableH/rows-6.0;
- double scale=fmin(1.0,fmin(maxW/288.0,maxH/624.0));
+ double scale=fmin(1.0,fmin(maxW/nominalW,maxH/624.0));
  if (scale<=0.0) { return CGSizeZero; }
- return CGSizeMake(floor(288.0*scale), floor(624.0*scale));
+ return CGSizeMake(floor(nominalW*scale), floor(624.0*scale));
 }
 
 char* adm_ax_read_window_frame_for_pid(int pid, double* x, double* y, double* width, double* height) {
@@ -455,13 +455,22 @@ char* adm_ax_resize_window_for_pid(int pid, double width, double height) {
 	if (trustState != 1) {
 		return adm_strdup("permission");
 	}
-	if (width <= 0.0 || height <= 0.0) {
+	if (width < 0.0 || height <= 0.0) {
 		return adm_strdup("invalid-size");
 	}
 	AXUIElementRef win = copy_window_for_pid((pid_t)pid);
 	if (win == NULL) {
 		return adm_strdup("not-found");
 	}
+ // scrcpy uses a 30-point macOS title bar. Width zero requests a
+ // common outer height with the device's current content aspect preserved.
+ if (width == 0.0) {
+  CGRect frame=CGRectZero;
+  if (!copy_ax_window_frame(win,&frame) || frame.size.height<=30.0) {
+   CFRelease(win);return adm_strdup("frame-unavailable");
+  }
+  width=round(frame.size.width*(height-30.0)/(frame.size.height-30.0));
+ }
  CGSize size=CGSizeMake(width,height);
  activate_ax_window(win);
  CGRect actual=CGRectZero;AXError sizeErr=kAXErrorSuccess;
@@ -490,6 +499,7 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 	// Android Emulator exposes the side toolbar as a sibling AX window.
 	CGFloat sideChromeW = 61.0;
 	CGFloat maxToolbarW = 0.0;
+ CGFloat maxNaturalWidth=0.0;
  int* hasToolbar = calloc((size_t)matched, sizeof(int));
 	if (hasToolbar == NULL) {
 		for (int i = 0; i < matched; i++) {
@@ -504,7 +514,14 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
  maxToolbarW=sideChromeW;
 			CFRelease(toolbar);
 		}
+  CGRect initial=CGRectZero;
+  if (copy_ax_window_frame(windows[i],&initial) && initial.size.height>30.0) {
+   CGFloat chrome=hasToolbar[i]?0.0:30.0;
+   CGFloat naturalWidth=initial.size.width*(624.0-chrome)/(initial.size.height-chrome);
+   maxNaturalWidth=fmax(maxNaturalWidth,naturalWidth);
+  }
 	}
+ if (maxNaturalWidth>0.0) {visibleWindowW=maxNaturalWidth;}
 	CGRect appFrame = CGRectZero;
 	CGRect workArea = CGRectMake(
 		bounds.origin.x + margin,
@@ -572,7 +589,7 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 	CGFloat usableH = workArea.size.height;
 	CGFloat cellH = usableH / rows;
 
-	CGSize uniformSize=adm_uniform_tile_size(usableW,usableH,cols,rows,maxToolbarW);
+ CGSize uniformSize=adm_uniform_tile_size(usableW,usableH,cols,rows,maxToolbarW,visibleWindowW);
  targetWindowW=uniformSize.width;targetWindowH=uniformSize.height;
  char diagnostics[512]="";
 	CGFloat* rowNextX = calloc((size_t)matched, sizeof(CGFloat));
@@ -605,6 +622,11 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 	for (int i = 0; i < matched; i++) {
 		int row = i / cols;
  CGFloat windowW=targetWindowW;CGFloat windowH=targetWindowH;
+  CGRect original=CGRectZero;
+  CGFloat chrome=hasToolbar[i]?0.0:30.0;
+  if (copy_ax_window_frame(windows[i],&original) && original.size.height>chrome) {
+   windowW=round(original.size.width*(windowH-chrome)/(original.size.height-chrome));
+  }
   CGFloat cellX=rowNextX[row];CGFloat cellY=workArea.origin.y+row*cellH;
   CGPoint position=CGPointMake(cellX,cellY);CGSize size=CGSizeMake(windowW,windowH);
   activate_ax_window(windows[i]);
@@ -704,8 +726,8 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 			finalX = finalFrame.origin.x;
 			finalY = finalFrame.origin.y;
 			finalMainW = finalFrame.size.width;
-   if ((fabs(finalFrame.size.width-targetWindowW)>2.0 || fabs(finalFrame.size.height-targetWindowH)>2.0) && diagnostics[0]=='\0') {
-    snprintf(diagnostics,sizeof(diagnostics),"resize-unverified index=%d requested=%.0fx%.0f actual=%.0fx%.0f",i,targetWindowW,targetWindowH,finalFrame.size.width,finalFrame.size.height);
+   if ((fabs(finalFrame.size.width-mainFrames[i].size.width)>2.0 || fabs(finalFrame.size.height-targetWindowH)>2.0) && diagnostics[0]=='\0') {
+    snprintf(diagnostics,sizeof(diagnostics),"resize-unverified index=%d requested=%.0fx%.0f actual=%.0fx%.0f",i,mainFrames[i].size.width,targetWindowH,finalFrame.size.width,finalFrame.size.height);
    }
 		}
 		if (toolbars[i] != NULL) {
@@ -1057,6 +1079,6 @@ func ReadProcessWindowFrame(pid int) (ExternalWindowFrame, error) {
 }
 
 func uniformExternalTileSize(width, height float64, cols, rows int, auxiliaryWidth float64) (float64, float64) {
-	size := C.adm_uniform_tile_size(C.double(width), C.double(height), C.int(cols), C.int(rows), C.double(auxiliaryWidth))
+	size := C.adm_uniform_tile_size(C.double(width), C.double(height), C.int(cols), C.int(rows), C.double(auxiliaryWidth), C.double(288))
 	return float64(size.width), float64(size.height)
 }
