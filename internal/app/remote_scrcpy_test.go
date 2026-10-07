@@ -12,6 +12,9 @@ import (
 func TestScrcpyArgsAvoidTimeoutAndKeepDeviceActive(t *testing.T) {
 	args := scrcpyArgs("emulator-5554", "安卓设备矩阵 test", false)
 	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "no-window-aspect-ratio-lock") {
+		t.Fatal("forcing a common width introduces black side panels")
+	}
 	if strings.Contains(joined, "time-limit") {
 		t.Fatalf("scrcpy production args must not use --time-limit: %v", args)
 	}
@@ -21,12 +24,11 @@ func TestScrcpyArgsAvoidTimeoutAndKeepDeviceActive(t *testing.T) {
 		"--max-fps=60",
 		"--video-codec=h264",
 		"--no-audio",
-		"--no-window-aspect-ratio-lock",
 		"--render-fit=letterbox",
 		"--keyboard=uhid",
 		"--window-title=安卓设备矩阵 test",
-		"--window-width=288",
-		"--window-height=624",
+		"--window-width=0",
+		"--window-height=594",
 		"--no-clipboard-autosync",
 		"--keep-active",
 	} {

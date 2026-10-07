@@ -7,7 +7,10 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 )
 
 func toolbarTestEntries() []core.DeviceEntry {
@@ -138,5 +141,61 @@ func TestRailActionSupportsKeyboardActivation(t *testing.T) {
 	focusable.FocusLost()
 	if calls != 1 || button.Text != "安装" {
 		t.Fatalf("labeled rail action must support keyboard activation: calls=%d label=%q", calls, button.Text)
+	}
+}
+
+func TestWorkbenchTopAndStatusRowsShareHorizontalInsets(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(admTheme{base: theme.DefaultTheme()})
+	top, bottom := canvas.NewRectangle(nil), canvas.NewRectangle(nil)
+	workbenchRowInsetLayout{vertical: 8}.Layout([]fyne.CanvasObject{top}, fyne.NewSize(1280, 52))
+	workbenchRowInsetLayout{}.Layout([]fyne.CanvasObject{bottom}, fyne.NewSize(1280, 36))
+	if top.Position().X != bottom.Position().X || top.Size().Width != bottom.Size().Width {
+		t.Fatal("toolbar and status row have unequal horizontal insets")
+	}
+	if top.Size().Height != 36 || bottom.Size().Height != 36 {
+		t.Fatal("row content does not share a 36px control slot")
+	}
+}
+
+func TestWorkbenchControlBoundsAndOpticalTextOffset(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(admTheme{base: theme.DefaultTheme()})
+	button := compactButton("设备操作", nil)
+	density := newCenteredDensitySelect([]string{"画面：标准"}, nil)
+	density.SetSelected("画面：标准")
+	search := newCenteredSearchEntry()
+	slot := container.New(centeredControlLayout{width: 112}, density)
+	row := container.New(centeredRowLayout{}, button, slot, container.New(centeredControlLayout{width: 160}, search))
+	row.Resize(fyne.NewSize(600, 52))
+	for _, object := range row.Objects {
+		if object.Size().Height != 36 || object.Position().Y != 8 {
+			t.Fatalf("unequal control bounds: %v %v", object.Position(), object.Size())
+		}
+	}
+	if density.Size().Height != 36 || search.Size().Height != 36 {
+		t.Fatal("input controls do not fill standard height")
+	}
+	renderer := test.WidgetRenderer(density)
+	renderer.Layout(density.Size())
+	var before fyne.Position
+	for _, object := range renderer.Objects() {
+		if _, ok := object.(*widget.RichText); ok {
+			before = object.Position()
+		}
+	}
+	renderer.Refresh()
+	renderer.Refresh()
+	for _, object := range renderer.Objects() {
+		if _, ok := object.(*widget.RichText); ok && object.Position() != before {
+			t.Fatal("optical correction accumulates on refresh")
+		}
+	}
+	hintRenderer := test.WidgetRenderer(search).(*centeredSearchRenderer)
+	hintRenderer.Layout(search.Size())
+	if hintRenderer.hint.Position().Y != (36-hintRenderer.hint.MinSize().Height)/2+toolbarTextOpticalOffset {
+		t.Fatal("search hint has a different optical center")
 	}
 }

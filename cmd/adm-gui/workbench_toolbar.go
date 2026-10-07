@@ -323,14 +323,15 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		g.showWorkbenchMenu(operations, menu)
 	}
 	g.logToolIcon = compactButton("日志", func() { g.logCollapsed = !g.logCollapsed; g.applyWorkbenchCollapseState() })
-	g.controlDensitySelect = widget.NewSelect([]string{"画面：小", "画面：标准", "画面：高清"}, func(label string) {
+	density := newCenteredDensitySelect([]string{"画面：小", "画面：标准", "画面：高清"}, func(label string) {
 		g.setControlDensity(controlDensityKeyByLabel(strings.TrimPrefix(label, "画面：")))
 	})
+	g.controlDensitySelect = &density.Select
 	g.controlDensitySelect.SetSelected("画面：" + controlDensityLabel(g.controlDensity))
-	left := container.New(centeredRowLayout{}, g.wallLibraryButton, container.New(centeredControlLayout{width: 112}, g.controlDensitySelect), container.New(centeredControlLayout{width: 160}, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()})))
+	left := container.New(centeredRowLayout{}, g.wallLibraryButton, container.New(centeredControlLayout{width: 112}, density), container.New(centeredControlLayout{width: 160}, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()})))
 	right := container.New(centeredRowLayout{}, operations, g.logToolIcon)
 	row := container.NewBorder(nil, nil, left, right, toolbar)
-	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.NewPadded(row)), nil, nil, nil, container.NewPadded(workspace)))
+	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.New(workbenchRowInsetLayout{vertical: theme.Padding()}, row)), nil, nil, nil, container.NewPadded(workspace)))
 }
 
 func (g *GUIApp) showWorkbenchMenu(button *widget.Button, menu *fyne.Menu) {
@@ -481,12 +482,67 @@ func (workbenchToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 	}
 }
 
-// Rows share a vertical center even when entries, labels and buttons have
-// different intrinsic heights. HBox otherwise places them at the top edge.
+// The toolbar and collapsed status row use the same horizontal inset.
+// Vertical padding is independent so the status row retains its 36px height.
+type workbenchRowInsetLayout struct{ vertical float32 }
+
+func (l workbenchRowInsetLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	size := fyne.NewSize(0, 0)
+	for _, object := range objects {
+		if object.Visible() {
+			size = size.Max(object.MinSize())
+		}
+	}
+	return size.Add(fyne.NewSize(2*theme.Padding(), 2*l.vertical))
+}
+func (l workbenchRowInsetLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, object := range objects {
+		object.Move(fyne.NewPos(theme.Padding(), l.vertical))
+		object.Resize(fyne.NewSize(max(0, size.Width-2*theme.Padding()), max(0, size.Height-2*l.vertical)))
+	}
+}
+
+const toolbarTextOpticalOffset float32 = 3
+
+// Select and Entry use regular text; adjacent actions use bold text. Align
+// the visible regular glyphs without moving their shared 36px control bounds.
+type centeredDensitySelect struct{ widget.Select }
+
+func newCenteredDensitySelect(options []string, onChanged func(string)) *centeredDensitySelect {
+	s := &centeredDensitySelect{Select: widget.Select{Options: options, OnChanged: onChanged}}
+	s.ExtendBaseWidget(s)
+	return s
+}
+func (s *centeredDensitySelect) CreateRenderer() fyne.WidgetRenderer {
+	base := s.Select.CreateRenderer()
+	s.ExtendBaseWidget(s)
+	return &centeredDensityRenderer{WidgetRenderer: base, selectWidget: s}
+}
+
+type centeredDensityRenderer struct {
+	fyne.WidgetRenderer
+	selectWidget *centeredDensitySelect
+}
+
+func (r *centeredDensityRenderer) Layout(size fyne.Size) {
+	r.WidgetRenderer.Layout(size)
+	for _, object := range r.WidgetRenderer.Objects() {
+		if _, ok := object.(*widget.RichText); ok {
+			object.Move(object.Position().Add(fyne.NewPos(0, toolbarTextOpticalOffset)))
+		}
+	}
+}
+func (r *centeredDensityRenderer) Refresh() {
+	r.WidgetRenderer.Refresh()
+	r.Layout(r.selectWidget.Size())
+}
+
+// Every visible row item occupies a shared 36px slot so buttons, labels and
+// input controls retain aligned bounds and centers.
 type centeredRowLayout struct{}
 
 func (centeredRowLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	size := fyne.NewSize(0, 36)
+	size := fyne.NewSize(0, controlCompactControlHeight)
 	count := 0
 	for _, object := range objects {
 		if !object.Visible() {
@@ -494,7 +550,7 @@ func (centeredRowLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 		}
 		min := object.MinSize()
 		size.Width += min.Width
-		size.Height = max(size.Height, min.Height)
+		size.Height = controlCompactControlHeight
 		count++
 	}
 	if count > 1 {
@@ -509,22 +565,26 @@ func (centeredRowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 			continue
 		}
 		min := object.MinSize()
-		object.Resize(min)
-		object.Move(fyne.NewPos(x, (size.Height-min.Height)/2))
+		object.Resize(fyne.NewSize(min.Width, controlCompactControlHeight))
+		object.Move(fyne.NewPos(x, (size.Height-controlCompactControlHeight)/2))
 		x += min.Width + theme.Padding()
 	}
 }
 
-// Single-line text widgets lay out text from their top inset, so retain their
-// intrinsic height and center them within a shared 36px control slot.
+// Input controls use the same 36px bounds as adjacent toolbar buttons.
 type centeredControlLayout struct{ width float32 }
 
 func (l centeredControlLayout) MinSize([]fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(l.width, 36)
+	return fyne.NewSize(l.width, controlCompactControlHeight)
 }
 func (l centeredControlLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	for _, object := range objects {
-		height := object.MinSize().Height
+		height := controlCompactControlHeight
+		// Labels lay out their text from the top; center their intrinsic
+		// text height inside the common slot instead of stretching it.
+		if _, ok := object.(*widget.Label); ok {
+			height = object.MinSize().Height
+		}
 		object.Resize(fyne.NewSize(size.Width, height))
 		object.Move(fyne.NewPos(0, (size.Height-height)/2))
 	}
@@ -563,7 +623,7 @@ func (r *centeredSearchRenderer) Layout(size fyne.Size) {
 	r.WidgetRenderer.Layout(size)
 	hintSize := r.hint.MinSize()
 	r.hint.Resize(hintSize)
-	r.hint.Move(fyne.NewPos((size.Width-hintSize.Width)/2, (size.Height-hintSize.Height)/2))
+	r.hint.Move(fyne.NewPos((size.Width-hintSize.Width)/2, (size.Height-hintSize.Height)/2+toolbarTextOpticalOffset))
 }
 func (r *centeredSearchRenderer) Refresh() {
 	r.WidgetRenderer.Refresh()

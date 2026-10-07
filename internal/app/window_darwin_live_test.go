@@ -39,12 +39,14 @@ func TestLiveNativeProcessWindowTile(t *testing.T) {
 	if len(pids) == 0 {
 		t.Fatal("set ADM_LIVE_PROCESS_PIDS")
 	}
+	originals := make(map[int]ExternalWindowFrame)
 	for _, pid := range pids {
 		frame, err := ReadProcessWindowFrame(pid)
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Logf("before pid=%d frame=%+v", pid, frame)
+		originals[pid] = frame
 	}
 	if err := tileProcessWindows(pids, 0); err != nil {
 		t.Fatalf("tile process windows: %v", err)
@@ -56,15 +58,19 @@ func TestLiveNativeProcessWindowTile(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Logf("after pid=%d frame=%+v", pid, frame)
+		old := originals[pid]
+		if math.Abs(frame.Width/(frame.Height-30)-old.Width/(old.Height-30)) > 0.005 {
+			t.Fatalf("device content aspect changed: before=%+v after=%+v", old, frame)
+		}
 		if frame.Width <= 0 || frame.Height <= 0 {
 			t.Fatalf("invalid frame for pid=%d: %+v", pid, frame)
 		}
 		if i == 0 {
 			common = frame
-		} else if math.Abs(frame.Width-common.Width) > 2 || math.Abs(frame.Height-common.Height) > 2 {
-			t.Fatalf("nonuniform outer dimensions: first=%+v pid=%d frame=%+v", common, pid, frame)
+		} else if math.Abs(frame.Height-common.Height) > 2 {
+			t.Fatalf("nonuniform outer heights: first=%+v pid=%d frame=%+v", common, pid, frame)
 		}
-		if frame.Width > float64(scrcpyWindowWidth)+2 || frame.Height > float64(scrcpyWindowHeight)+2 {
+		if frame.Height > float64(scrcpyWindowHeight)+2 {
 			t.Fatalf("oversized tile: %+v", frame)
 		}
 	}
@@ -204,7 +210,7 @@ func TestLiveProcessWindowReuseRestoresUniformSize(t *testing.T) {
 		t.Fatal("set ADM_LIVE_PROCESS_PIDS to at least two existing mirrors")
 	}
 	for i, pid := range pids {
-		if err := resizeProcessWindow(pid, 300+i*20, 540+i*60); err != nil {
+		if err := resizeProcessWindow(pid, 0, 540+i*60); err != nil {
 			t.Fatalf("simulate manual resize for pid=%d: %v", pid, err)
 		}
 		frame, err := ReadProcessWindowFrame(pid)
@@ -227,8 +233,8 @@ func TestLiveProcessWindowReuseRestoresUniformSize(t *testing.T) {
 			t.Logf("pass=%d pid=%d frame=%+v", pass, pid, frame)
 			if i == 0 {
 				common = frame
-			} else if math.Abs(frame.Width-common.Width) > 2 || math.Abs(frame.Height-common.Height) > 2 {
-				t.Fatalf("nonuniform size after reuse: %+v versus %+v", common, frame)
+			} else if math.Abs(frame.Height-common.Height) > 2 {
+				t.Fatalf("nonuniform height after reuse: %+v versus %+v", common, frame)
 			}
 			if pass == 0 {
 				firstPass = append(firstPass, frame)
