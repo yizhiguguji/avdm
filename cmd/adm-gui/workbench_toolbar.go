@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
@@ -299,13 +300,12 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	}
 	toolbar := container.New(workbenchToolbarLayout{}, objects...)
 	workspace := g.buildWallWorkspace()
-	search := widget.NewEntry()
-	search.SetPlaceHolder("搜索设备")
+	search := newCenteredSearchEntry()
 	search.OnChanged = func(value string) {
 		g.wallSearch = strings.TrimSpace(value)
 		g.renderControlCenter()
 	}
-	g.wallSearchEntry = search
+	g.wallSearchEntry = &search.Entry
 	operations := compactButton("设备操作", nil)
 	operations.SetIcon(theme.MenuDropDownIcon())
 	operations.Importance = widget.MediumImportance
@@ -524,4 +524,50 @@ func (l centeredControlLayout) Layout(objects []fyne.CanvasObject, size fyne.Siz
 		object.Resize(fyne.NewSize(size.Width, height))
 		object.Move(fyne.NewPos(0, (size.Height-height)/2))
 	}
+}
+
+// Draw the empty search hint at the actual visual center; the standard Entry
+// placeholder is positioned from its text inset rather than its bounds.
+type centeredSearchEntry struct {
+	widget.Entry
+	focused bool
+}
+
+func newCenteredSearchEntry() *centeredSearchEntry {
+	e := &centeredSearchEntry{}
+	e.ExtendBaseWidget(e)
+	return e
+}
+func (e *centeredSearchEntry) FocusGained() { e.focused = true; e.Entry.FocusGained(); e.Refresh() }
+func (e *centeredSearchEntry) FocusLost()   { e.focused = false; e.Entry.FocusLost(); e.Refresh() }
+func (e *centeredSearchEntry) CreateRenderer() fyne.WidgetRenderer {
+	hint := canvas.NewText("搜索设备", admColorMuted)
+	hint.TextSize = 13
+	return &centeredSearchRenderer{WidgetRenderer: e.Entry.CreateRenderer(), entry: e, hint: hint}
+}
+
+type centeredSearchRenderer struct {
+	fyne.WidgetRenderer
+	entry *centeredSearchEntry
+	hint  *canvas.Text
+}
+
+func (r *centeredSearchRenderer) Objects() []fyne.CanvasObject {
+	return append(r.WidgetRenderer.Objects(), r.hint)
+}
+func (r *centeredSearchRenderer) Layout(size fyne.Size) {
+	r.WidgetRenderer.Layout(size)
+	hintSize := r.hint.MinSize()
+	r.hint.Resize(hintSize)
+	r.hint.Move(fyne.NewPos((size.Width-hintSize.Width)/2, (size.Height-hintSize.Height)/2))
+}
+func (r *centeredSearchRenderer) Refresh() {
+	r.WidgetRenderer.Refresh()
+	if r.entry.Text != "" || r.entry.focused {
+		r.hint.Hide()
+	} else {
+		r.hint.Show()
+	}
+	r.Layout(r.entry.Size())
+	r.hint.Refresh()
 }

@@ -127,7 +127,9 @@ func (g *GUIApp) buildWallWorkspace() fyne.CanvasObject {
 		g.renderControlCenter()
 		g.wallWorkspace.Refresh()
 	})
-	online := container.NewVScroll(g.controlGrid)
+	g.wallStoppedGrid = container.NewVBox()
+	g.wallStoppedPanel = container.New(stableMinWidthLayout{width: 260}, panelSurface("未启动与异常设备", "可直接启动，完整列表见设备库", container.NewVScroll(g.wallStoppedGrid)))
+	online := container.NewBorder(nil, nil, nil, g.wallStoppedPanel, container.NewVScroll(g.controlGrid))
 	library := container.NewBorder(libraryTableHeader(), nil, nil, nil, container.NewVScroll(g.wallLibraryGrid))
 	g.wallWorkspace = container.New(wallWorkspaceLayout{g: g}, online, library)
 	return g.wallWorkspace

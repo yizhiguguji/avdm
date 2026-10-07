@@ -172,6 +172,8 @@ type GUIApp struct {
 	wallLibraryMode      bool
 	wallWorkspace        *fyne.Container
 	wallLibraryGrid      *fyne.Container
+	wallStoppedGrid      *fyne.Container
+	wallStoppedPanel     fyne.CanvasObject
 	wallOnlineLabel      *widget.Label
 	wallLibraryButton    *widget.Button
 	wallWorkspaceWidth   float32
@@ -684,14 +686,14 @@ func appFrame(content fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func collapsedBar(content fyne.CanvasObject) fyne.CanvasObject {
-	bg := canvas.NewRectangle(admColorPanelBG2)
+	bg := roundedRect(admColorPanelBG2, 8)
 	bg.StrokeColor = admColorBorder
 	bg.StrokeWidth = 1
 	return container.NewStack(bg, content)
 }
 
 func topSurface(content fyne.CanvasObject) fyne.CanvasObject {
-	bg := canvas.NewRectangle(admColorPanelBG)
+	bg := roundedRect(admColorPanelBG, 8)
 	bg.StrokeColor = admColorBorder
 	bg.StrokeWidth = 1
 	return container.NewStack(bg, content)
