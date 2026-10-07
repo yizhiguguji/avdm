@@ -233,7 +233,7 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		g.controlHidden = map[string]bool{}
 	}
 	if g.controlDensity == "" {
-		g.controlDensity = controlDensitySmall
+		g.controlDensity = controlDensityStandard
 	}
 	g.controlSummary = widget.NewLabel("")
 	g.controlGrid = container.NewVBox()
@@ -298,8 +298,35 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		objects[i] = button
 	}
 	toolbar := container.New(workbenchToolbarLayout{}, objects...)
-	panel := panelSurface("", "", container.NewBorder(toolbar, nil, nil, nil, g.buildWallWorkspace()))
-	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.New(workbenchWidthLayout{}, panel))
+	workspace := g.buildWallWorkspace()
+	search := widget.NewEntry()
+	search.SetPlaceHolder("搜索设备")
+	search.OnChanged = func(value string) {
+		g.wallSearch = strings.TrimSpace(value)
+		g.renderControlCenter()
+	}
+	g.wallSearchEntry = search
+	operations := compactButton("设备操作", nil)
+	operations.SetIcon(theme.MenuDropDownIcon())
+	operations.Importance = widget.MediumImportance
+	operations.OnTapped = func() {
+		target := fyne.NewMenuItem(g.currentLabel.Text, nil)
+		target.Disabled = true
+		menu := fyne.NewMenu("设备操作", target, fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("安装应用…", func() { g.toggleRightPanel("install") }),
+			fyne.NewMenuItem("卸载应用…", func() { g.toggleRightPanel("uninstall") }),
+			fyne.NewMenuItem("输入文本…", func() { g.toggleRightPanel("message") }),
+			fyne.NewMenuItem("收起工具面板", func() { g.rightActive = ""; g.applyWorkbenchCollapseState() }),
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("重启主目标…", g.rebootCurrentDevice),
+			fyne.NewMenuItem("关闭主目标…", g.closeCurrentDevice))
+		g.showWorkbenchMenu(operations, menu)
+	}
+	g.logToolIcon = compactButton("日志", func() { g.logCollapsed = !g.logCollapsed; g.applyWorkbenchCollapseState() })
+	left := container.NewHBox(g.wallLibraryButton, container.NewGridWrap(fyne.NewSize(160, 32), search))
+	right := container.NewHBox(operations, g.logToolIcon)
+	row := container.NewBorder(nil, nil, left, right, toolbar)
+	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.NewPadded(row)), nil, nil, nil, container.NewPadded(workspace)))
 }
 
 func (g *GUIApp) showWorkbenchMenu(button *widget.Button, menu *fyne.Menu) {
@@ -333,6 +360,9 @@ func (g *GUIApp) showWallViewDialog(view *widget.Button) {
 			return
 		}
 		g.wallSearch = strings.TrimSpace(search.Text)
+		if g.wallSearchEntry != nil {
+			g.wallSearchEntry.SetText(g.wallSearch)
+		}
 		g.wallStateFilter = state.Selected
 		for key, label := range labels {
 			if label == density.Selected {

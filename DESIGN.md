@@ -1,7 +1,7 @@
 # Design
 
 ## Source of truth
-- Status: Current implementation rejected in visual review; redesign proposal below is the next design baseline, pending application implementation.
+- Status: Redesign baseline implemented in the application; current delivery recorded below, subject to user visual review.
 - Last refreshed: 2026-10-07
 - Primary product surfaces: 安卓设备矩阵 single-window desktop workbench, CLI.
 - Evidence reviewed: `cmd/adm-gui/main.go`, `README.md`, `docs/USER_GUIDE.md`, BrowserStack multi-device testing docs, Android Studio Device Manager docs, Genymotion SaaS UI docs, local UX review notes from this session.
@@ -193,3 +193,11 @@
 ### 本轮研究交付
 
 `docs/design/workbench-prototype.html` 是自包含、可直接打开的交互原型，明确标注示例画面，不接入 ADB。可切换窗口模式、2/6 台演示、设备墙/库、密度、搜索、状态筛选、目标工具菜单和日志。浏览器验证了 1280 与 1920 下标准卡尺寸不变、工具栏 48px、搜索和视图切换保留唯一勾选、日志在固定窗口内占高。此轮没有修改或替换 App，实际 Fyne 迁移属于以上计划的后续实施阶段。
+
+### 双视图工作台实际落地（2026-10-07）
+
+移除顶部状态行、右侧常驻动作轨和 1600px 居中内容上限，工作区使用整窗可用空间。唯一顶部操作行含设备库切换、搜索、扫描、视图、常用动作与设备操作菜单；较窄时次要动作进入更多。状态移到底部，任务工具临时展开并显示主目标及收起入口。设备库包含全部设备，名称、类型、状态和动作按共同列对齐。
+
+预览采用固定三档密度、左上共同基线，默认标准；按手机约 0.45 的宽高比减少画面黑边，卡片仅留单行返回、主页、窗口，管理收入更多。辅助字号由 11px 提高为 12px，正文与辅助文字采用深色，减少泛白、低对比的问题。
+
+布局测试覆盖常规与大窗口尺寸不漂移、基线、无居中上限、双视图及预览复用；完整 race 与 vet 通过。已对本机常规、最大化、完整设备库、工具与日志状态进行实际检查，签名构建并备份替换安装版。实际窗口截图仅存放在忽略的本地 .build/ui-review-20261007，未将设备屏幕内容推送到仓库。

@@ -14,9 +14,9 @@ import (
 )
 
 var controlDensityOptions = []controlDensitySpec{
-	{key: controlDensitySmall, label: "小", cardSize: controlCardSize(260, 352), previewSize: fyne.NewSize(220, 352)},
-	{key: controlDensityStandard, label: "中", cardSize: controlCardSize(320, 448), previewSize: fyne.NewSize(280, 448)},
-	{key: controlDensityHD, label: "大", cardSize: controlCardSize(380, 544), previewSize: fyne.NewSize(340, 544)},
+	{key: controlDensitySmall, label: "小", cardSize: controlCardSize(240, 352), previewSize: fyne.NewSize(158, 352)},
+	{key: controlDensityStandard, label: "中", cardSize: controlCardSize(264, 448), previewSize: fyne.NewSize(202, 448)},
+	{key: controlDensityHD, label: "大", cardSize: controlCardSize(304, 544), previewSize: fyne.NewSize(245, 544)},
 }
 
 func (g *GUIApp) renderControlCenter() {
@@ -54,8 +54,8 @@ func (g *GUIApp) renderControlCenter() {
 	spec := g.controlDensitySpec()
 	var cards, rows []fyne.CanvasObject
 	for _, entry := range g.wallVisibleEntries() {
+		rows = append(rows, g.buildControlCompactRow(entry))
 		if !readyWallEntry(entry) {
-			rows = append(rows, g.buildControlCompactRow(entry))
 			continue
 		}
 		card := g.controlCards[entry.Key]
@@ -126,7 +126,6 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 	independent := compactButton("窗口", func() { g.openIndependentDeviceWindow(key, card.entry.Label) })
 	home := compactButton("主页", func() { g.keyEventDevice(serial, "主页", 3) })
 	back := compactButton("返回", func() { g.keyEventDevice(serial, "返回", 4) })
-	manage := compactButton("管理", func() { g.showControlDeviceManageDialog(card.entry) })
 	more := compactButton("更多", nil)
 	more.SetIcon(theme.MenuDropDownIcon())
 	more.OnTapped = func() {
@@ -138,6 +137,7 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 			fyne.NewMenuItem("设为主目标", func() {
 				g.runAction("设为主目标 "+card.entry.Label, func() error { return g.backend.GUISetCurrentDevice(key) })
 			}),
+			fyne.NewMenuItem("管理设备…", func() { g.showControlDeviceManageDialog(card.entry) }),
 			fyne.NewMenuItem("展开通知栏", func() { g.statusBarDevice(serial, "通知栏", "notifications") }),
 			fyne.NewMenuItem(hideLabel, func() {
 				if g.controlHidden == nil {
@@ -151,10 +151,10 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 		popup := widget.NewPopUpMenu(menu, driver.CanvasForObject(more))
 		popup.ShowAtPosition(driver.AbsolutePositionForObject(more).Add(fyne.NewPos(0, more.Size().Height)))
 	}
-	g.registerActionButtons(independent, home, back, manage)
+	g.registerActionButtons(independent, home, back)
 	card.wall.previewBox = container.NewGridWrap(spec.previewSize, previewInteractiveObject(preview))
 	header := container.NewBorder(nil, nil, selected, more, title)
-	actions := container.NewGridWithColumns(4, independent, home, back, manage)
+	actions := container.NewGridWithColumns(3, back, home, independent)
 	card.wall.object = controlCardSurface(container.NewVBox(header, container.NewCenter(card.wall.previewBox), container.NewThemeOverride(status, captionTheme{g.app.Settings().Theme()}), actions))
 	return card.wall.object
 }
@@ -178,26 +178,37 @@ func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObjec
 	}
 	title := widget.NewLabelWithStyle(controlCardTitle(entry), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	title.Truncation = fyne.TextTruncateEllipsis
-	state := entryStatus(entry)
-	if entry.Running && entry.Active == nil {
-		state = "启动中，等待连接"
+	state := workbenchDeviceState(entry)
+	status := widget.NewLabel(state)
+	if state == wallStateReady {
+		status.TextStyle.Bold = true
 	}
-	status := canvas.NewText(state, admColorMuted)
-	status.TextSize = 13
-	manage := compactButton("管理", func() { g.showControlDeviceManageDialog(entry) })
-	actions := container.NewHBox(manage)
-	if entry.AVD != nil && !entry.Running {
+	manage := compactButton("更多", func() { g.showControlDeviceManageDialog(entry) })
+	actions := container.NewHBox()
+	if entry.AVD != nil && !entry.Running && entry.Active == nil {
 		name := entry.AVD.Name
 		start := compactButton("启动", func() { g.runAction("启动模拟器 "+name, func() error { return g.backend.GUIStartAVD(name) }) })
-		start.Importance = widget.LowImportance
+		start.Importance = widget.MediumImportance
 		g.prepareActionButton(start)
 		actions.Add(start)
-	} else if entry.Running || entry.Active != nil {
-		close := compactButton("关闭", func() { g.showCloseEntryDialog(entry) })
-		close.Importance = widget.WarningImportance
-		actions.Add(close)
+	} else if readyWallEntry(entry) {
+		actions.Add(compactButton("窗口", func() { g.openIndependentDeviceWindow(entry.Key, entry.Label) }))
 	}
-	return container.NewBorder(nil, canvas.NewLine(admColorBorder), selected, container.NewCenter(actions), container.NewVBox(title, status))
+	actions.Add(manage)
+	detail := controlCardIdentity(entry)
+	if entry.Active == nil && entry.AVD != nil {
+		detail = entry.AVD.Device
+	}
+	identityLabel := widget.NewLabel(detail)
+	identityLabel.Truncation = fyne.TextTruncateEllipsis
+	identity := container.NewVBox(title, container.NewThemeOverride(identityLabel, captionTheme{g.app.Settings().Theme()}))
+	kind := "模拟器"
+	if entry.Active != nil && !entry.Active.IsEmulator {
+		kind = "真机"
+	}
+	row := container.New(libraryRowLayout{}, selected, identity, widget.NewLabel(kind), status, actions)
+	return container.NewStack(canvas.NewRectangle(admColorPanelBG), container.NewBorder(nil, canvas.NewLine(admColorBorder), nil, nil, row))
+
 }
 
 func (g *GUIApp) findEntryByKey(key string) (core.DeviceEntry, bool) {
@@ -569,4 +580,35 @@ func controlDensityKeyByLabel(label string) string {
 		}
 	}
 	return controlDensityStandard
+}
+
+// A shared table rhythm keeps metadata and row actions aligned across devices.
+type libraryRowLayout struct{}
+
+func (libraryRowLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(320, 64) }
+func (libraryRowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) != 5 {
+		return
+	}
+	typeWidth := float32(120)
+	if size.Width < 680 {
+		typeWidth = 0
+	}
+	widths := []float32{32, max(100, size.Width-32-typeWidth-120-160-32), typeWidth, 120, 160}
+	x := float32(8)
+	for i, o := range objects {
+		if widths[i] == 0 {
+			o.Hide()
+			continue
+		}
+		o.Show()
+		h := min(size.Height, o.MinSize().Height)
+		o.Move(fyne.NewPos(x, (size.Height-h)/2))
+		o.Resize(fyne.NewSize(widths[i], h))
+		x += widths[i] + 4
+	}
+}
+func libraryTableHeader() fyne.CanvasObject {
+	labels := []fyne.CanvasObject{widget.NewLabel(""), widget.NewLabelWithStyle("设备", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewLabel("类型"), widget.NewLabel("状态"), widget.NewLabel("操作")}
+	return container.NewStack(canvas.NewRectangle(admColorPanelBG2), container.New(libraryRowLayout{}, labels...))
 }

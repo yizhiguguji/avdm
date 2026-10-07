@@ -14,7 +14,7 @@ import (
 const (
 	dockIconBarWidth    float32 = 64  // width of an always-visible edge icon bar
 	dockIconGap         float32 = 6   // gap between an icon bar and its neighbour
-	dockRailHeight      float32 = 32  // height of the collapsed bottom rail
+	dockRailHeight      float32 = 36  // height of the collapsed bottom rail
 	dockHandleThickness float32 = 6   // draggable divider thickness
 	dockSideMinWidth    float32 = 200 // min expanded width of a side pane
 	dockSideMaxWidth    float32 = 480 // absolute max expanded width of a side pane
@@ -22,7 +22,7 @@ const (
 	dockLogMinHeight    float32 = 120 // min expanded height of the log pane
 	dockLogMaxFraction  float32 = 0.6 // log pane may take at most this fraction of height
 
-	dockRightDefaultWidth float32 = 380
+	dockRightDefaultWidth float32 = 340
 	dockLogDefaultHeight  float32 = 220
 )
 
