@@ -501,8 +501,8 @@ func (g *GUIApp) buildLogRail() fyne.CanvasObject {
 	g.logRailSummary.TextSize = 12
 	details := compactButton("检查工具", g.showToolHealthDialog)
 	g.busyLabel.Truncation = fyne.TextTruncateEllipsis
-	left := container.New(centeredRowLayout{}, details, compactStatus(g.toolSummary, 100), compactStatus(g.busyLabel, 140), g.progress)
-	right := container.New(centeredRowLayout{}, compactStatus(g.currentLabel, 180), compactStatus(g.selectedLabel, 190))
+	left := container.New(centeredRowLayout{}, details, footerStatus(g.toolSummary, 100, 2), footerStatus(g.busyLabel, 140, 2), container.NewCenter(g.progress))
+	right := container.New(centeredRowLayout{}, footerStatus(g.currentLabel, 180, 0), footerStatus(g.selectedLabel, 190, 0))
 	start := compactButton("启动", g.startWorkbenchSelection)
 	stop := compactButton("关闭…", g.stopWorkbenchSelection)
 	remove := compactButton("删除…", g.showSelectedDeleteAVDDialog)
@@ -1653,6 +1653,27 @@ func compactStatus(status *widget.Label, width float32) fyne.CanvasObject {
 		width = 96
 	}
 	return container.New(centeredControlLayout{width: width}, status)
+}
+
+func footerStatus(status *widget.Label, width, opticalOffset float32) fyne.CanvasObject {
+	return container.New(footerStatusLayout{width: width, opticalOffset: opticalOffset}, status)
+}
+
+// Align tool/task glyphs with actions and target labels without shifting
+// their shared control bounds or horizontal insets.
+type footerStatusLayout struct{ width, opticalOffset float32 }
+
+func (l footerStatusLayout) MinSize([]fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(l.width, controlCompactControlHeight)
+}
+
+func (l footerStatusLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, object := range objects {
+		label := object.(*widget.Label)
+		height := label.MinSize().Height
+		label.Resize(fyne.NewSize(size.Width, height))
+		label.Move(fyne.NewPos(0, (size.Height-height)/2+l.opticalOffset))
+	}
 }
 
 func controlButtonRows(buttons []fyne.CanvasObject, width float32) fyne.CanvasObject {
