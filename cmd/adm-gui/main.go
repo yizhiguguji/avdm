@@ -577,7 +577,10 @@ func (g *GUIApp) showToolHealthDialog() {
 	scriptHint := widget.NewLabel(bootstrapHint(bootstrap))
 	scriptHint.Wrapping = fyne.TextWrapWord
 	scriptHint.Importance = widget.LowImportance
-	footer := container.NewVBox(mutedText("Android SDK / Homebrew / PATH 检测结果"), container.NewCenter(container.NewHBox(permissionButton, installButton, refreshButton, closeButton)))
+	copyButton := widget.NewButton("复制检测结果", func() {
+		g.app.Clipboard().SetContent(toolHealthDetails(statuses, bootstrap))
+	})
+	footer := container.NewVBox(mutedText("Android SDK / Homebrew / PATH 检测结果"), container.NewCenter(container.NewHBox(copyButton, permissionButton, installButton, refreshButton, closeButton)))
 	content := container.NewStack(
 		roundedRect(admColorPanelBG, 10),
 		container.NewPadded(container.NewBorder(
@@ -1270,8 +1273,7 @@ func (g *GUIApp) confirmAction(title, message string, ok func()) {
 }
 
 func (g *GUIApp) confirmActionWithLabels(title, message, confirmLabel, cancelLabel string, ok func()) {
-	body := widget.NewLabel(message)
-	body.Wrapping = fyne.TextWrapWord
+	body := g.dialogMessageContent(message, fyne.NewSize(640, 220))
 	sourceButton := g.pendingActionButton
 	sourceLabel := g.pendingActionButtonLabel
 
@@ -1348,8 +1350,7 @@ func (g *GUIApp) showAccessibilityPermissionDialog(message string) {
 	if message == "" {
 		message = "排列和控制外部窗口需要 macOS 辅助功能权限。\n\n" + core.AccessibilityPermissionGuide
 	}
-	body := widget.NewLabel(message)
-	body.Wrapping = fyne.TextWrapWord
+	body := g.dialogMessageContent(message, fyne.NewSize(640, 220))
 	var d dialog.Dialog
 	openButton := widget.NewButton("打开系统设置", func() {
 		settingsURL, err := url.Parse(core.AccessibilitySettingsURL)
@@ -1373,11 +1374,7 @@ func (g *GUIApp) showAccessibilityPermissionDialog(message string) {
 }
 
 func (g *GUIApp) showMessageDialog(title, message string, danger bool) {
-	body := widget.NewLabel(message)
-	body.Wrapping = fyne.TextWrapWord
-	body.Alignment = fyne.TextAlignLeading
-	bodyScroll := container.NewScroll(container.NewPadded(body))
-	bodyScroll.SetMinSize(fyne.NewSize(680, 260))
+	body := g.dialogMessageContent(message, fyne.NewSize(640, 220))
 
 	var d dialog.Dialog
 	okButton := widget.NewButton("关闭", func() {
@@ -1385,12 +1382,12 @@ func (g *GUIApp) showMessageDialog(title, message string, danger bool) {
 	})
 	okButton.Importance = widget.HighImportance
 
-	content := container.NewGridWrap(fyne.NewSize(560, 180), container.NewBorder(
+	content := container.NewGridWrap(fyne.NewSize(720, 340), container.NewBorder(
 		nil,
 		container.NewCenter(okButton),
 		nil,
 		nil,
-		bodyScroll,
+		body,
 	))
 	d = dialog.NewCustomWithoutButtons(title, content, g.activeDialogWindow())
 	d.Show()

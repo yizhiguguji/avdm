@@ -10,11 +10,12 @@ import (
 // replace the text the user is copying.
 type selectableLog struct {
 	widget.Entry
-	onFocus func()
+	onFocus   func()
+	menuTitle string
 }
 
 func newSelectableLog() *selectableLog {
-	l := &selectableLog{}
+	l := &selectableLog{menuTitle: "日志"}
 	l.MultiLine = true
 	l.Wrapping = fyne.TextWrapOff
 	l.Scroll = fyne.ScrollNone
@@ -41,7 +42,7 @@ func (l *selectableLog) TappedSecondary(event *fyne.PointEvent) {
 	if canvas == nil {
 		return
 	}
-	menu := fyne.NewMenu("日志", fyne.NewMenuItem("复制选中", func() { l.TypedShortcut(&fyne.ShortcutCopy{Clipboard: fyne.CurrentApp().Clipboard()}) }), fyne.NewMenuItem("全选", func() { l.TypedShortcut(&fyne.ShortcutSelectAll{}) }))
+	menu := fyne.NewMenu(l.menuTitle, fyne.NewMenuItem("复制选中", func() { l.TypedShortcut(&fyne.ShortcutCopy{Clipboard: fyne.CurrentApp().Clipboard()}) }), fyne.NewMenuItem("全选", func() { l.TypedShortcut(&fyne.ShortcutSelectAll{}) }))
 	widget.ShowPopUpMenuAtPosition(menu, canvas, event.AbsolutePosition)
 }
 

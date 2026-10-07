@@ -61,14 +61,12 @@ func (g *GUIApp) runEntryBatchAction(name string, entries []core.DeviceEntry, op
 			if len(failed) == 0 {
 				return
 			}
-			body := wrappedLabel(fmt.Sprintf("成功 %d，失败 %d。重试仅针对以下失败目标：\n\n%s", len(results)-len(failed), len(failed), strings.Join(lines, "\n")))
-			scroll := container.NewVScroll(body)
-			scroll.SetMinSize(fyne.NewSize(540, 220))
+			body := g.dialogMessageContent(fmt.Sprintf("成功 %d，失败 %d。重试仅针对以下失败目标：\n\n%s", len(results)-len(failed), len(failed), strings.Join(lines, "\n")), fyne.NewSize(540, 220))
 			var d dialog.Dialog
 			close := widget.NewButton("关闭", func() { d.Hide() })
 			retry := widget.NewButton("仅重试失败目标", func() { d.Hide(); g.runEntryBatchAction(name+"（重试）", failed, operation) })
 			retry.Importance = widget.HighImportance
-			d = dialog.NewCustomWithoutButtons("批量任务结果", container.NewBorder(nil, container.NewHBox(close, retry), nil, nil, scroll), g.activeDialogWindow())
+			d = dialog.NewCustomWithoutButtons("批量任务结果", container.NewBorder(nil, container.NewHBox(close, retry), nil, nil, body), g.activeDialogWindow())
 			d.Show()
 		})
 	}()

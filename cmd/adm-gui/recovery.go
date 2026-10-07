@@ -3,7 +3,6 @@ package main
 import (
 	core "adm/internal/app"
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/widget"
 )
 
 // Injected by packaging so Fyne preferences and the signed bundle share an ID.
@@ -47,8 +46,7 @@ func (g *GUIApp) checkAccessibilityAndResume() {
 
 func (g *GUIApp) showInstallSystemImageDialog() {
 	text := "尚未安装 Android 系统镜像。\n\n可在本应用下载推荐镜像：" + core.GUIRecommendedSystemImage() + "\n下载可能需要数 GB 空间和数分钟时间。SDK 许可需已接受；也可先在 Android Studio 的 SDK Manager 安装。"
-	body := widget.NewLabel(text)
-	body.Wrapping = fyne.TextWrapWord
+	body := g.dialogMessageContent(text, fyne.NewSize(640, 220))
 	g.showActionDialog("安装系统镜像", "下载并安装", false, body, func() {
 		g.runActionWithCompletion("安装推荐系统镜像", g.backend.GUIInstallRecommendedSystemImage, func(err error) {
 			if err == nil {

@@ -119,8 +119,7 @@ func (g *GUIApp) showMultiInstallDialog(source string) {
 		})
 		selectAll.SetChecked(allInstallTargetsSelected(targets, checks))
 
-		info := widget.NewLabel(fmt.Sprintf("只会安装到下面勾选的设备。\nAPK：%s\n允许降级：%v", source, allowDowngrade))
-		info.Wrapping = fyne.TextWrapWord
+		info := g.dialogMessageContent(fmt.Sprintf("只会安装到下面勾选的设备。\nAPK：%s\n允许降级：%v", source, allowDowngrade), fyne.NewSize(700, 140))
 		list := container.NewVScroll(container.NewVBox(rows...))
 		content := container.NewGridWrap(fyne.NewSize(760, 360),
 			container.NewBorder(
@@ -455,7 +454,7 @@ func (g *GUIApp) showCloseEntryDialog(entry core.DeviceEntry) {
 	}
 	serialEntry := widget.NewEntry()
 	serialEntry.SetPlaceHolder(device.Serial)
-	content := container.NewVBox(wrappedLabel("目标设备：" + entry.Label + "\nSerial：" + device.Serial + "\n\n" + warning))
+	content := container.NewVBox(g.dialogMessageContent("目标设备："+entry.Label+"\nSerial："+device.Serial+"\n\n"+warning, fyne.NewSize(640, 200)))
 	if physical {
 		content.Add(serialEntry)
 	}
