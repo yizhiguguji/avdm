@@ -11,13 +11,13 @@ type admTheme struct {
 }
 
 var (
-	admColorAppBG      = color.NRGBA{R: 244, G: 246, B: 248, A: 255}
+	admColorAppBG      = color.NRGBA{R: 236, G: 238, B: 241, A: 255}
 	admColorPanelBG    = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	admColorPanelBG2   = color.NRGBA{R: 248, G: 249, B: 251, A: 255}
-	admColorBorder     = color.NRGBA{R: 222, G: 227, B: 233, A: 255}
-	admColorText       = color.NRGBA{R: 32, G: 40, B: 50, A: 255}
-	admColorMuted      = color.NRGBA{R: 112, G: 123, B: 137, A: 255}
-	admColorPrimary    = color.NRGBA{R: 49, G: 112, B: 211, A: 255}
+	admColorPanelBG2   = color.NRGBA{R: 247, G: 248, B: 250, A: 255}
+	admColorBorder     = color.NRGBA{R: 216, G: 221, B: 229, A: 255}
+	admColorText       = color.NRGBA{R: 37, G: 42, B: 52, A: 255}
+	admColorMuted      = color.NRGBA{R: 98, G: 107, B: 122, A: 255}
+	admColorPrimary    = color.NRGBA{R: 82, G: 101, B: 216, A: 255}
 	admColorDanger     = color.NRGBA{R: 205, G: 66, B: 70, A: 255}
 	admColorSuccess    = color.NRGBA{R: 40, G: 146, B: 105, A: 255}
 	admColorPreviewBG  = color.NRGBA{R: 18, G: 21, B: 27, A: 255}
@@ -28,14 +28,18 @@ func (t admTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) col
 	switch name {
 	case theme.ColorNameBackground:
 		return admColorAppBG
-	case theme.ColorNameHeaderBackground, theme.ColorNameMenuBackground:
+	case theme.ColorNameHeaderBackground:
+		return admColorPanelBG2
+	case theme.ColorNameMenuBackground:
 		return admColorPanelBG
 	case theme.ColorNameButton:
-		return color.NRGBA{R: 238, G: 241, B: 245, A: 255}
+		return color.NRGBA{R: 235, G: 238, B: 243, A: 255}
 	case theme.ColorNameDisabledButton:
-		return color.NRGBA{R: 246, G: 247, B: 249, A: 255}
-	case theme.ColorNameDisabled, theme.ColorNamePlaceHolder:
-		return admColorMuted
+		return admColorPanelBG2
+	case theme.ColorNameDisabled:
+		return color.NRGBA{R: 124, G: 132, B: 144, A: 255}
+	case theme.ColorNamePlaceHolder:
+		return color.NRGBA{R: 107, G: 116, B: 130, A: 255}
 	case theme.ColorNameError:
 		return admColorDanger
 	case theme.ColorNameForeground:
@@ -43,11 +47,13 @@ func (t admTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) col
 	case theme.ColorNameForegroundOnPrimary, theme.ColorNameForegroundOnError:
 		return color.White
 	case theme.ColorNameFocus:
-		return color.NRGBA{R: 49, G: 112, B: 211, A: 70}
+		return color.NRGBA{R: 82, G: 101, B: 216, A: 70}
 	case theme.ColorNamePrimary, theme.ColorNameHyperlink:
 		return admColorPrimary
-	case theme.ColorNameHover, theme.ColorNamePressed:
-		return color.NRGBA{R: 224, G: 232, B: 242, A: 180}
+	case theme.ColorNameHover:
+		return color.NRGBA{R: 231, G: 234, B: 240, A: 255}
+	case theme.ColorNamePressed:
+		return color.NRGBA{R: 222, G: 227, B: 241, A: 255}
 	case theme.ColorNameInputBackground, theme.ColorNameOverlayBackground:
 		return admColorPanelBG
 	case theme.ColorNameInputBorder, theme.ColorNameSeparator:
@@ -57,7 +63,7 @@ func (t admTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) col
 	case theme.ColorNameScrollBarBackground:
 		return color.Transparent
 	case theme.ColorNameSelection:
-		return color.NRGBA{R: 49, G: 112, B: 211, A: 60}
+		return color.NRGBA{R: 82, G: 101, B: 216, A: 60}
 	case theme.ColorNameShadow:
 		return color.NRGBA{A: 25}
 	case theme.ColorNameSuccess:
@@ -107,7 +113,7 @@ func (t captionTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant)
 }
 func (t captionTheme) Size(name fyne.ThemeSizeName) float32 {
 	if name == theme.SizeNameText {
-		return 11
+		return 12
 	}
 	return t.Theme.Size(name)
 }

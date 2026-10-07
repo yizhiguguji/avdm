@@ -2,15 +2,15 @@ package main
 
 import (
 	"fmt"
+	"math"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	"math"
 )
 
-// The device library has its own scroll area. At narrow widths it opens in a
-// dialog, leaving the entire workbench available for online previews.
+// The wall and complete library share the workspace; neither reserves a
+// permanent column while the other view is active.
 type wallWorkspaceLayout struct{ g *GUIApp }
 
 func (l wallWorkspaceLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(320, 240) }
@@ -19,32 +19,21 @@ func (l wallWorkspaceLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 		return
 	}
 	online, library := objects[0], objects[1]
-	g := l.g
-	g.wallWorkspaceWidth = size.Width
-	if g.wallOnlineCount == 0 && g.wallLibraryCount > 0 {
+	l.g.wallWorkspaceWidth = size.Width
+	if grid, ok := l.g.controlGrid.Layout.(*adaptivePreviewLayout); ok {
+		grid.viewport = size
+	}
+	if l.g.wallLibraryMode {
 		online.Hide()
 		library.Show()
-		width := min(size.Width, 620)
-		library.Move(fyne.NewPos((size.Width-width)/2, 0))
-		library.Resize(fyne.NewSize(width, size.Height))
-		return
-	}
-	online.Show()
-	width := size.Width
-	if size.Width >= 900 && g.wallLibraryCount > 0 && !g.libraryCollapsed {
-		library.Show()
-		libraryWidth := float32(300)
-		width -= libraryWidth + 12
-		library.Move(fyne.NewPos(width+12, 0))
-		library.Resize(fyne.NewSize(libraryWidth, size.Height))
 	} else {
+		online.Show()
 		library.Hide()
 	}
-	online.Move(fyne.NewPos(0, 0))
-	if grid, ok := g.controlGrid.Layout.(*adaptivePreviewLayout); ok {
-		grid.viewport = fyne.NewSize(width, size.Height)
+	for _, object := range objects {
+		object.Move(fyne.NewPos(0, 0))
+		object.Resize(size)
 	}
-	online.Resize(fyne.NewSize(width, size.Height))
 }
 
 type previewGeometry struct {
@@ -53,16 +42,20 @@ type previewGeometry struct {
 	gap           float32
 }
 
+// A resize changes the number of columns, never the chosen device density.
+// Keep this helper's signature for callers that compare layout geometry.
 func calculatePreviewGeometry(viewport fyne.Size, count int, minWidth, overhead float32) previewGeometry {
-	gap := float32(12)
-	width := max(viewport.Width, 320)
-	columns := max(1, int((width+gap)/(minWidth+gap)))
+	preview := fyne.NewSize(max(1, minWidth-40), max(1, minWidth-40)*1.6)
+	for _, spec := range controlDensityOptions {
+		if spec.cardSize.Width == minWidth {
+			preview = spec.previewSize
+			break
+		}
+	}
+	gap := float32(16)
+	columns := max(1, int((viewport.Width+gap)/(minWidth+gap)))
 	columns = min(columns, max(count, 1))
-	cellWidth := (width - gap*float32(columns-1)) / float32(columns)
-	height := max(240, min(viewport.Height-overhead-24, (cellWidth-20)/0.50))
-	height = min(height, 760)
-	preview := fyne.NewSize(height*0.50, height)
-	return previewGeometry{columns: columns, preview: preview, card: fyne.NewSize(min(cellWidth, max(minWidth, preview.Width+20)), height+overhead), gap: gap}
+	return previewGeometry{columns: columns, preview: preview, card: fyne.NewSize(minWidth, preview.Height+overhead), gap: gap}
 }
 
 type adaptivePreviewLayout struct {
@@ -71,7 +64,8 @@ type adaptivePreviewLayout struct {
 }
 
 func (l *adaptivePreviewLayout) geometry(objects []fyne.CanvasObject) previewGeometry {
-	overhead := float32(96)
+	spec := l.g.controlDensitySpec()
+	overhead := max(0, spec.cardSize.Height-spec.previewSize.Height)
 	for _, card := range l.g.controlCards {
 		if card.wall.visible {
 			overhead = max(overhead, card.wall.object.MinSize().Height-card.preview.minSize.Height)
@@ -79,103 +73,114 @@ func (l *adaptivePreviewLayout) geometry(objects []fyne.CanvasObject) previewGeo
 	}
 	viewport := l.viewport
 	if viewport.Width == 0 {
-		viewport = fyne.NewSize(760, 640)
+		viewport.Width = 760
 	}
-	return calculatePreviewGeometry(viewport, len(objects), l.g.controlDensitySpec().cardSize.Width, overhead)
+	geom := calculatePreviewGeometry(viewport, len(objects), spec.cardSize.Width, overhead)
+	geom.preview = spec.previewSize
+	geom.card.Height = spec.previewSize.Height + overhead
+	return geom
 }
 func (l *adaptivePreviewLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	if len(objects) == 0 {
 		return fyne.NewSize(320, 100)
 	}
+	if l.g.wallOnlineCount == 0 {
+		return fyne.NewSize(320, objects[0].MinSize().Height)
+	}
 	geom := l.geometry(objects)
 	rows := int(math.Ceil(float64(len(objects)) / float64(geom.columns)))
-	return fyne.NewSize(320, float32(rows)*geom.card.Height+float32(rows-1)*geom.gap+16)
+	return fyne.NewSize(320, float32(rows)*geom.card.Height+float32(rows-1)*geom.gap)
 }
 func (l *adaptivePreviewLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	if len(objects) == 0 {
 		return
 	}
+	if l.g.wallOnlineCount == 0 {
+		for _, object := range objects {
+			object.Move(fyne.NewPos(0, 0))
+			object.Resize(fyne.NewSize(size.Width, object.MinSize().Height))
+		}
+		return
+	}
+	l.viewport.Width = size.Width
 	geom := l.geometry(objects)
 	for _, card := range l.g.controlCards {
 		if card.wall.visible {
-			spec := l.g.controlDensitySpec()
-			spec.previewSize = geom.preview
-			l.g.updateWallCardSize(card, spec)
+			l.g.updateWallCardSize(card, l.g.controlDensitySpec())
 		}
 	}
-	for i, obj := range objects {
+	for i, object := range objects {
 		row, col := i/geom.columns, i%geom.columns
-		inRow := min(geom.columns, len(objects)-row*geom.columns)
-		rowWidth := float32(inRow)*geom.card.Width + float32(inRow-1)*geom.gap
-		x := max(0, (size.Width-rowWidth)/2) + float32(col)*(geom.card.Width+geom.gap)
-		rows := (len(objects) + geom.columns - 1) / geom.columns
-		totalHeight := float32(rows)*geom.card.Height + float32(rows-1)*geom.gap
-		y := max(8, (l.viewport.Height-totalHeight)/2)
-		obj.Move(fyne.NewPos(x, y+float32(row)*(geom.card.Height+geom.gap)))
-		obj.Resize(geom.card)
+		object.Move(fyne.NewPos(float32(col)*(geom.card.Width+geom.gap), float32(row)*(geom.card.Height+geom.gap)))
+		object.Resize(geom.card)
 	}
 }
 
 func (g *GUIApp) buildWallWorkspace() fyne.CanvasObject {
 	g.controlGrid.Layout = &adaptivePreviewLayout{g: g}
 	g.wallLibraryGrid = container.NewVBox()
+	// Retained as a status model for callers; it is not an extra workspace row.
 	g.wallOnlineLabel = widget.NewLabelWithStyle("在线设备", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	g.wallLibraryButton = compactButton("设备库", func() {
-		if g.wallWorkspaceWidth < 900 {
-			g.showDeviceLibraryDialog()
-			return
-		}
-		g.libraryCollapsed = !g.libraryCollapsed
+	g.wallLibraryButton = compactButton("设备库 (0)", func() {
+		g.wallLibraryMode = !g.wallLibraryMode
+		g.updateWallViewButton()
+		g.renderControlCenter()
 		g.wallWorkspace.Refresh()
 	})
-	online := container.NewBorder(nil, nil, nil, nil, container.NewVScroll(g.controlGrid))
-	library := panelSurface("设备库", "未启动及异常设备", container.NewVScroll(g.wallLibraryGrid))
+	online := container.NewVScroll(g.controlGrid)
+	library := container.NewBorder(libraryTableHeader(), nil, nil, nil, container.NewVScroll(g.wallLibraryGrid))
 	g.wallWorkspace = container.New(wallWorkspaceLayout{g: g}, online, library)
-	header := container.NewBorder(nil, nil, g.wallOnlineLabel, g.wallLibraryButton, nil)
-	return container.NewBorder(header, nil, nil, nil, g.wallWorkspace)
+	return g.wallWorkspace
+}
+
+func (g *GUIApp) updateWallViewButton() {
+	if g.wallLibraryButton == nil {
+		return
+	}
+	if g.wallLibraryMode {
+		g.wallLibraryButton.SetText(fmt.Sprintf("设备墙 (%d)", g.wallOnlineCount))
+	} else {
+		g.wallLibraryButton.SetText(fmt.Sprintf("设备库 (%d)", g.wallLibraryCount))
+	}
+	// Returning to the wall remains available even when filtering has no results.
+	g.wallLibraryButton.Enable()
 }
 
 func (g *GUIApp) updateWallWorkspace(cards, rows []fyne.CanvasObject) {
 	g.wallOnlineCount = len(cards)
 	g.wallLibraryCount = len(rows)
 	g.controlGrid.Objects = cards
-	if g.wallLibraryGrid == nil { // legacy unit fixtures
+	if g.wallLibraryGrid == nil {
 		g.controlGrid.Refresh()
 		return
+	}
+	if len(cards) == 0 {
+		message := "没有在线设备。连接手机并开启 USB 调试，或从设备库启动模拟器。"
+		if len(g.entries) > 0 && len(rows) == 0 {
+			message = "没有符合筛选条件的在线设备。"
+		}
+		openLibrary := compactButton("查看设备库", g.showDeviceLibraryDialog)
+		g.controlGrid.Objects = []fyne.CanvasObject{container.NewVBox(wrappedLabel(message), container.NewHBox(openLibrary))}
 	}
 	g.wallLibraryGrid.Objects = rows
 	g.wallLibraryGrid.Refresh()
 	g.wallOnlineLabel.SetText(fmt.Sprintf("在线设备 · %d", len(cards)))
-	g.wallLibraryButton.SetText(fmt.Sprintf("设备库 (%d)", len(rows)))
-	if len(rows) == 0 {
-		g.wallLibraryButton.Disable()
-	} else {
-		g.wallLibraryButton.Enable()
-	}
+	g.updateWallViewButton()
 	g.wallWorkspace.Refresh()
 	g.controlGrid.Refresh()
 }
 
+// Older callers use this name; the library now occupies the same workbench.
 func (g *GUIApp) showDeviceLibraryDialog() {
-	var rows []fyne.CanvasObject
-	for _, entry := range g.wallVisibleEntries() {
-		if !readyWallEntry(entry) {
-			rows = append(rows, g.buildControlCompactRow(entry))
-		}
+	g.wallLibraryMode = true
+	g.updateWallViewButton()
+	g.renderControlCenter()
+	if g.wallWorkspace != nil {
+		g.wallWorkspace.Refresh()
 	}
-	if len(rows) == 0 {
-		g.showInfo("没有未启动或异常设备。")
-		return
-	}
-	content := container.NewVScroll(container.NewVBox(rows...))
-	content.SetMinSize(fyne.NewSize(500, 360))
-	d := dialog.NewCustom("设备库", "关闭", content, g.activeDialogWindow())
-	d.SetOnClosed(g.renderControlCenter)
-	d.Show()
 }
 
-// Cap reading width on very large displays instead of magnifying a phone to
-// an entire monitor. The workspace still responds to tool and log panes.
+// Kept for existing toolbar construction, with no reading-width cap or centering.
 type workbenchWidthLayout struct{}
 
 func (workbenchWidthLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -185,9 +190,8 @@ func (workbenchWidthLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(320, objects[0].MinSize().Height)
 }
 func (workbenchWidthLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	for _, obj := range objects {
-		width := min(size.Width, 1600)
-		obj.Move(fyne.NewPos((size.Width-width)/2, 0))
-		obj.Resize(fyne.NewSize(width, size.Height))
+	for _, object := range objects {
+		object.Move(fyne.NewPos(0, 0))
+		object.Resize(size)
 	}
 }

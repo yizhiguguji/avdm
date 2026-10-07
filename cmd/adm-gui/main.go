@@ -25,8 +25,8 @@ const controlDensitySmall = "small"
 const controlDensityStandard = "standard"
 const controlDensityHD = "hd"
 const controlCardHeaderHeight float32 = 34
-const controlCardStatusHeight float32 = 34
-const controlCardButtonRowsHeight float32 = 96
+const controlCardStatusHeight float32 = 24
+const controlCardButtonRowsHeight float32 = 36
 const controlCardPaddingHeight float32 = 32
 const mainWindowDefaultWidth float32 = 1280
 const mainWindowDefaultHeight float32 = 820
@@ -168,6 +168,8 @@ type GUIApp struct {
 	logProgrammaticScroll bool
 	logLines              []string
 
+	wallSearchEntry      *widget.Entry
+	wallLibraryMode      bool
 	wallWorkspace        *fyne.Container
 	wallLibraryGrid      *fyne.Container
 	wallOnlineLabel      *widget.Label
@@ -199,15 +201,16 @@ type GUIApp struct {
 	rightW       float32
 	logH         float32
 
-	hDock          *fyne.Container
-	vDock          *fyne.Container
-	logStack       *fyne.Container
-	logRail        fyne.CanvasObject
-	logRailSummary *canvas.Text
-	rightHandle    *resizeHandle
-	logHandle      *resizeHandle
-	rightPanel     fyne.CanvasObject
-	logPanel       fyne.CanvasObject
+	hDock           *fyne.Container
+	vDock           *fyne.Container
+	logStack        *fyne.Container
+	logRail         fyne.CanvasObject
+	logRailSummary  *canvas.Text
+	rightHandle     *resizeHandle
+	logHandle       *resizeHandle
+	toolTargetLabel *widget.Label
+	rightPanel      fyne.CanvasObject
+	logPanel        fyne.CanvasObject
 
 	// Edge icon bars (always visible) and their tappable icons. The icons are
 	// the single collapse/expand control per pane: highlighted when the pane
@@ -324,7 +327,6 @@ func (g *GUIApp) build() {
 	}
 	g.logFollow = true
 
-	topBar := g.buildTopBar()
 	wall := g.buildDeviceWallPanel()
 
 	// The three right-side tool panels are built once and only toggled visible;
@@ -333,7 +335,11 @@ func (g *GUIApp) build() {
 	g.installPanel = rightToolPanel(g.buildInstallPanel())
 	g.uninstallPanel = rightToolPanel(g.buildUninstallPanel())
 	g.messagePanel = rightToolPanel(g.buildMessagePanel())
-	g.rightPanel = container.NewStack(g.installPanel, g.uninstallPanel, g.messagePanel)
+	g.toolTargetLabel = widget.NewLabel("主目标：未选择")
+	g.toolTargetLabel.Wrapping = fyne.TextWrapWord
+	dismissTool := compactButton("收起", func() { g.rightActive = ""; g.applyWorkbenchCollapseState() })
+	toolHeader := container.NewBorder(nil, canvas.NewLine(admColorBorder), nil, dismissTool, g.toolTargetLabel)
+	g.rightPanel = container.NewBorder(topSurface(container.NewPadded(toolHeader)), nil, nil, nil, container.NewStack(g.installPanel, g.uninstallPanel, g.messagePanel))
 
 	g.logPanel = g.buildLogPanel()
 
@@ -345,7 +351,6 @@ func (g *GUIApp) build() {
 		g.logH = dockLogDefaultHeight
 	}
 
-	g.rightIconBar = g.buildRightIconBar()
 	g.logRail = g.buildLogRail()
 
 	// The log pane uses a summary rail or full panel, toggled from the right rail.
@@ -360,10 +365,10 @@ func (g *GUIApp) build() {
 	g.vDock = container.New(verticalDockLayout{g: g}, g.hDock, g.logHandle, g.logStack)
 
 	// Root: working area followed by the right tool rail.
-	root := container.New(edgeBarLayout{}, g.vDock, g.rightIconBar)
+	root := g.vDock
 	g.applyWorkbenchCollapseState()
 
-	page := container.NewBorder(topBar, nil, nil, nil, root)
+	page := root
 	g.window.SetContent(appFrame(page))
 }
 
@@ -481,9 +486,10 @@ func iconBarDivider() fyne.CanvasObject {
 func (g *GUIApp) buildLogRail() fyne.CanvasObject {
 	g.logRailSummary = canvas.NewText(g.logCollapsedSummary(), admColorMuted)
 	g.logRailSummary.TextSize = 12
-	// Expand/collapse is driven by the log icon in the right rail, so the rail
-	// only shows the summary.
-	return collapsedBar(container.NewBorder(nil, nil, g.logRailSummary, nil, nil))
+	details := compactButton("检查工具", g.showToolHealthDialog)
+	left := container.NewHBox(details, compactStatus(g.toolSummary, 120), compactStatus(g.busyLabel, 190), g.progress)
+	right := container.NewHBox(compactStatus(g.currentLabel, 200), compactStatus(g.selectedLabel, 180))
+	return collapsedBar(container.NewThemeOverride(container.NewBorder(nil, nil, left, right, nil), captionTheme{g.app.Settings().Theme()}))
 }
 
 func (g *GUIApp) buildTopBar() fyne.CanvasObject {
@@ -673,20 +679,20 @@ func roundedRect(fill color.Color, radius float32) *canvas.Rectangle {
 func appFrame(content fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(
 		canvas.NewRectangle(admColorAppBG),
-		container.NewPadded(content),
+		content,
 	)
 }
 
 func collapsedBar(content fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(
-		roundedRect(admColorAppBG, 0),
+		roundedRect(admColorPanelBG2, 0),
 		content,
 	)
 }
 
 func topSurface(content fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(
-		roundedRect(admColorPanelBG, 8),
+		roundedRect(admColorPanelBG2, 0),
 		content,
 	)
 }
@@ -838,6 +844,9 @@ func (g *GUIApp) applyState(state core.GUIState, revealTop bool) {
 	g.lastAPKSource = state.LastAPKSource
 	g.mirrorAlwaysOnTop = state.MirrorAlwaysOnTop
 	g.currentLabel.SetText("主目标：" + state.CurrentDevice)
+	if g.toolTargetLabel != nil {
+		g.toolTargetLabel.SetText("主目标：" + state.CurrentDevice)
+	}
 	missing := 0
 	for _, tool := range state.Tools {
 		if !tool.Available {

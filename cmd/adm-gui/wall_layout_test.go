@@ -2,53 +2,115 @@ package main
 
 import (
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"testing"
 )
 
-func TestPreviewGeometryGrowsCentersAndFits(t *testing.T) {
-	small := calculatePreviewGeometry(fyne.NewSize(780, 620), 2, 260, 124)
-	wide := calculatePreviewGeometry(fyne.NewSize(2100, 1280), 2, 260, 124)
-	if wide.preview.Height <= small.preview.Height || wide.columns != 2 {
-		t.Fatalf("does not grow: %+v / %+v", small, wide)
-	}
-	for _, size := range []fyne.Size{fyne.NewSize(320, 400), fyne.NewSize(780, 620), fyne.NewSize(2100, 1280)} {
-		for _, count := range []int{1, 2, 10, 30} {
-			geom := calculatePreviewGeometry(size, count, 260, 124)
-			width := geom.card.Width*float32(geom.columns) + geom.gap*float32(geom.columns-1)
-			if width > size.Width+1 {
-				t.Fatalf("overflow %.0f > %.0f", width, size.Width)
+func TestPreviewGeometryKeepsDensityAcrossWindowAndLogSizes(t *testing.T) {
+	for _, spec := range controlDensityOptions {
+		overhead := spec.cardSize.Height - spec.previewSize.Height
+		baseline := calculatePreviewGeometry(fyne.NewSize(780, 620), 2, spec.cardSize.Width, overhead)
+		for _, viewport := range []fyne.Size{fyne.NewSize(780, 280), fyne.NewSize(2100, 1280), fyne.NewSize(320, 400)} {
+			geom := calculatePreviewGeometry(viewport, 2, spec.cardSize.Width, overhead)
+			if geom.card != baseline.card || geom.preview != spec.previewSize {
+				t.Fatalf("window resize changed density: %+v / %+v", baseline, geom)
 			}
-			if absFloat32(geom.card.Height-geom.preview.Height-124) > 0.01 {
-				t.Fatal("unused card padding")
+		}
+		for _, count := range []int{1, 2, 10, 30} {
+			viewport := fyne.NewSize(2100, 1280)
+			geom := calculatePreviewGeometry(viewport, count, spec.cardSize.Width, overhead)
+			used := geom.card.Width*float32(geom.columns) + geom.gap*float32(geom.columns-1)
+			if used > viewport.Width || geom.columns > count {
+				t.Fatalf("invalid columns: %+v", geom)
 			}
 		}
 	}
 }
-func TestWallWorkspaceSeparatesLibraryAndPreservesSessions(t *testing.T) {
+
+func TestPreviewGridAnchorsAtTopLeftAndUsesFixedDensity(t *testing.T) {
 	g := testWall(t)
-	g.buildWallWorkspace()
+	g.wallOnlineCount = 2
+	objects := []fyne.CanvasObject{canvas.NewRectangle(nil), canvas.NewRectangle(nil)}
+	l := &adaptivePreviewLayout{g: g, viewport: fyne.NewSize(1200, 700)}
+	l.Layout(objects, fyne.NewSize(1200, 700))
+	firstSize := objects[0].Size()
+	if objects[0].Position() != fyne.NewPos(0, 0) || objects[1].Position().Y != 0 {
+		t.Fatal("grid is not anchored at top left")
+	}
+	if objects[1].Position().X != firstSize.Width+16 {
+		t.Fatal("grid spacing changed")
+	}
+	l.viewport = fyne.NewSize(2400, 300)
+	l.Layout(objects, fyne.NewSize(2400, 300))
+	if objects[0].Size() != firstSize || objects[0].Position() != fyne.NewPos(0, 0) {
+		t.Fatal("maximizing or opening logs changes device dimensions")
+	}
+}
+
+func TestWallWorkspaceSwitchesCompleteLibraryAndPreservesSessions(t *testing.T) {
+	g := testWall(t)
+	if g.buildWallWorkspace() != g.wallWorkspace {
+		t.Fatal("workspace has an extra header wrapper")
+	}
 	entries := toolbarTestEntries()
 	g.entries = entries
 	g.renderControlCenter()
-	g.wallWorkspace.Resize(fyne.NewSize(1200, 700))
-	if g.wallLibraryGrid.Size().Width > 620 {
-		t.Fatal("library stretches across workbench")
+	rows := make([]fyne.CanvasObject, len(entries))
+	for i, e := range entries {
+		rows[i] = widget.NewLabel(e.Label)
 	}
-	if !g.wallWorkspace.Objects[1].Visible() || len(g.controlGrid.Objects) != 2 || len(g.wallLibraryGrid.Objects) != 4 {
-		t.Fatal("online and library not separated")
-	}
+	g.updateWallWorkspace(g.controlGrid.Objects, rows)
 	card := g.controlCards["phone"]
-	g.wallWorkspace.Resize(fyne.NewSize(780, 700))
-	if g.wallWorkspace.Objects[1].Visible() {
-		t.Fatal("narrow library crowds previews")
+	for _, size := range []fyne.Size{fyne.NewSize(1200, 700), fyne.NewSize(780, 400), fyne.NewSize(2600, 1400)} {
+		g.wallWorkspace.Resize(size)
+		if !g.wallWorkspace.Objects[0].Visible() || g.wallWorkspace.Objects[1].Visible() {
+			t.Fatal("library reserves a permanent column")
+		}
+		if g.wallWorkspace.Objects[0].Size() != size {
+			t.Fatal("wall does not fill workspace")
+		}
 	}
-	g.libraryCollapsed = true
-	g.wallWorkspace.Resize(fyne.NewSize(1200, 700))
-	if g.wallWorkspace.Objects[1].Visible() || g.controlCards["phone"] != card {
-		t.Fatal("collapse disrupted preview")
+	g.wallLibraryButton.OnTapped()
+	if !g.wallLibraryMode || g.wallWorkspace.Objects[0].Visible() || !g.wallWorkspace.Objects[1].Visible() {
+		t.Fatal("library view did not replace wall")
+	}
+	if len(g.wallLibraryGrid.Objects) != len(entries) || g.wallLibraryButton.Text != "设备墙 (2)" {
+		t.Fatal("complete library or return count missing")
+	}
+	g.wallWorkspace.Resize(fyne.NewSize(780, 400))
+	if !g.wallWorkspace.Objects[1].Visible() {
+		t.Fatal("library disappears at narrow widths")
+	}
+	g.wallLibraryButton.OnTapped()
+	if g.wallLibraryMode || g.controlCards["phone"] != card || g.wallLibraryButton.Text != "设备库 (6)" {
+		t.Fatal("view switch disrupted session or count")
 	}
 }
+
+func TestWallWithoutOnlineDevicesKeepsLibraryEntryPoint(t *testing.T) {
+	g := testWall(t)
+	g.buildWallWorkspace()
+	g.updateWallWorkspace(nil, []fyne.CanvasObject{widget.NewLabel("Stopped AVD")})
+	g.wallWorkspace.Resize(fyne.NewSize(1200, 700))
+	if g.wallLibraryMode || !g.wallWorkspace.Objects[0].Visible() || g.wallWorkspace.Objects[1].Visible() || len(g.controlGrid.Objects) != 1 {
+		t.Fatal("empty wall switched automatically or lost next action")
+	}
+	g.showDeviceLibraryDialog()
+	if !g.wallLibraryMode || !g.wallWorkspace.Objects[1].Visible() {
+		t.Fatal("empty wall library action failed")
+	}
+}
+
+func TestWorkbenchWidthFillsMaximizedWindow(t *testing.T) {
+	object := canvas.NewRectangle(nil)
+	workbenchWidthLayout{}.Layout([]fyne.CanvasObject{object}, fyne.NewSize(3200, 1600))
+	if object.Position() != fyne.NewPos(0, 0) || object.Size() != fyne.NewSize(3200, 1600) {
+		t.Fatal("workspace remains capped or centered")
+	}
+}
+
 func TestLogSelectionCopyAndReadOnly(t *testing.T) {
 	a := test.NewApp()
 	defer a.Quit()
