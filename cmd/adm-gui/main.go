@@ -487,8 +487,8 @@ func (g *GUIApp) buildLogRail() fyne.CanvasObject {
 	g.logRailSummary = canvas.NewText(g.logCollapsedSummary(), admColorMuted)
 	g.logRailSummary.TextSize = 12
 	details := compactButton("检查工具", g.showToolHealthDialog)
-	left := container.NewHBox(details, compactStatus(g.toolSummary, 120), compactStatus(g.busyLabel, 190), g.progress)
-	right := container.NewHBox(compactStatus(g.currentLabel, 200), compactStatus(g.selectedLabel, 180))
+	left := container.New(centeredRowLayout{}, details, compactStatus(g.toolSummary, 120), compactStatus(g.busyLabel, 190), g.progress)
+	right := container.New(centeredRowLayout{}, compactStatus(g.currentLabel, 200), compactStatus(g.selectedLabel, 180))
 	return collapsedBar(container.NewThemeOverride(container.NewBorder(nil, nil, left, right, nil), captionTheme{g.app.Settings().Theme()}))
 }
 
@@ -684,17 +684,17 @@ func appFrame(content fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func collapsedBar(content fyne.CanvasObject) fyne.CanvasObject {
-	return container.NewStack(
-		roundedRect(admColorPanelBG2, 0),
-		content,
-	)
+	bg := canvas.NewRectangle(admColorPanelBG2)
+	bg.StrokeColor = admColorBorder
+	bg.StrokeWidth = 1
+	return container.NewStack(bg, content)
 }
 
 func topSurface(content fyne.CanvasObject) fyne.CanvasObject {
-	return container.NewStack(
-		roundedRect(admColorPanelBG2, 0),
-		content,
-	)
+	bg := canvas.NewRectangle(admColorPanelBG)
+	bg.StrokeColor = admColorBorder
+	bg.StrokeWidth = 1
+	return container.NewStack(bg, content)
 }
 
 func panelSurface(title, subtitle string, content fyne.CanvasObject) fyne.CanvasObject {
@@ -1584,7 +1584,7 @@ func compactStatus(status *widget.Label, width float32) fyne.CanvasObject {
 	if width < 96 {
 		width = 96
 	}
-	return container.NewGridWrap(fyne.NewSize(width, controlCompactControlHeight), status)
+	return container.New(centeredControlLayout{width: width}, status)
 }
 
 func controlButtonRows(buttons []fyne.CanvasObject, width float32) fyne.CanvasObject {
