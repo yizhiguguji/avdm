@@ -51,7 +51,7 @@ $(APP_ICON_ICNS): $(APP_ICON_PNG)
 
 package-macos: $(APP_ICON_ICNS)
 	mkdir -p "$(APP_CONTENTS)/MacOS" "$(APP_CONTENTS)/Resources"
-	go build -o "$(APP_EXECUTABLE)" ./cmd/adm-gui
+	go build -ldflags "-X main.applicationID=$(APP_ID)" -o "$(APP_EXECUTABLE)" ./cmd/adm-gui
 	cp "$(APP_ICON_ICNS)" "$(APP_CONTENTS)/Resources/$(APP_STEM).icns"
 	cp "scripts/install-macos-deps.sh" "$(APP_CONTENTS)/Resources/install-macos-deps.sh"
 	chmod +x "$(APP_CONTENTS)/Resources/install-macos-deps.sh"

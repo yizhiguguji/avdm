@@ -239,3 +239,13 @@ non-standard locations.
 The control center depends on ADB and, for real-time mirrors, `scrcpy`. macOS
 Accessibility permission is not required for scrcpy mirroring; it only affects
 legacy external emulator window focus or tiling helpers.
+
+## 桌面工作台（2026-10）
+
+顶部操作保持单行，窗口变窄时次要操作收入「更多」。使用「视图」搜索设备名称或 serial、筛选状态和调整预览密度；已筛选时按钮显示「筛选」。未启动和异常设备以紧凑行显示，在线设备显示预览。
+
+勾选表示批量范围，主目标表示右侧安装、卸载、输入、重启和关闭的单台目标。批量启动、关闭及删除会列出可执行目标和跳过原因；失败结果可仅重试失败设备。主目标切换后会清空上一设备的包列表，重新加载后再卸载。
+
+「外部窗」未勾选时打开全部在线设备；明确勾选但没有合格设备时只显示原因，不会扩大范围。排列失败时使用「打开系统设置」进入辅助功能配置，手动授权后点击「已开启，重新检查」继续排列原窗口。若当前进程仍未获得权限，按引导重新添加应用并重启。
+
+创建模拟器时如无系统镜像，可选择下载推荐镜像。下载前需接受 Android SDK 许可，也可在 Android Studio SDK Manager 安装后返回创建。
