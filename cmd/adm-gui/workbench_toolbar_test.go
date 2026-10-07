@@ -199,3 +199,41 @@ func TestWorkbenchControlBoundsAndOpticalTextOffset(t *testing.T) {
 		t.Fatal("search hint has a different optical center")
 	}
 }
+
+func TestSearchCaretCenteredAcrossFocusTextAndRefresh(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(admTheme{base: theme.DefaultTheme()})
+	search := newCenteredSearchEntry()
+	w := a.NewWindow("search")
+	w.SetContent(container.NewThemeOverride(search, toolbarSearchTheme{a.Settings().Theme()}))
+	search.Resize(fyne.NewSize(160, 36))
+	search.FocusGained()
+	r := test.WidgetRenderer(search).(*centeredSearchRenderer)
+	for _, text := range []string{"", "设备", "Pixel_10_Pro_serial_very_long_identifier"} {
+		search.SetText(text)
+		search.CursorColumn = len([]rune(text))
+		for i := 0; i < 3; i++ {
+			search.Refresh()
+			found := false
+			for _, object := range r.WidgetRenderer.Objects() {
+				if scroll, ok := object.(*container.Scroll); ok {
+					found = true
+					line := fyne.MeasureText("M", search.Theme().Size(theme.SizeNameText), search.TextStyle).Height
+					center := scroll.Position().Y + search.CursorPosition().Y + line/2 - scroll.Offset.Y
+					if center < 17.5 || center > 18.5 {
+						t.Fatalf("caret off center after refresh: text=%q center=%v offset=%v", text, center, scroll.Offset)
+					}
+				}
+			}
+			if !found || r.hint.Visible() {
+				t.Fatal("missing editable viewport or hint overlaps focused caret")
+			}
+		}
+	}
+	search.SetText("")
+	search.FocusLost()
+	if !r.hint.Visible() {
+		t.Fatal("empty unfocused hint was not restored")
+	}
+}
