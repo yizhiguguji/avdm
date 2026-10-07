@@ -8,7 +8,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -243,15 +242,14 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 
 	scan := compactButton("扫描", func() { g.refreshAsync(false) })
 	scan.SetIcon(theme.ViewRefreshIcon())
-	frames := compactButton("画面", g.refreshControlScreensAsync)
+	frames := compactButton("刷新画面", g.refreshControlScreensAsync)
 	var view *widget.Button
-	view = compactButton("视图", func() { g.showWallViewDialog(view) })
+	view = compactButton("状态", func() { g.showWallStateMenu(view) })
 	external := compactButton("外部窗", g.openExternalDeviceWindows)
 	create := compactButton("创建", g.showCreateAVDDialog)
 	create.SetIcon(theme.ContentAddIcon())
-	start := compactButton("启动选中", g.startWorkbenchSelection)
-	selection := compactButton("选择", nil)
-	selection.SetIcon(theme.MenuDropDownIcon())
+	clear := compactButton("清选", g.clearWorkbenchSelection)
+	selection := compactButton("选在线", func() { g.selectVisibleWallState(wallStateReady) })
 	selectionMenu := fyne.NewMenu("选择",
 		fyne.NewMenuItem("选中当前显示", g.selectVisibleWallEntries),
 		fyne.NewMenuItem("选中显示的在线设备", func() { g.selectVisibleWallState(wallStateReady) }),
@@ -262,7 +260,7 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 			g.renderControlCenter()
 		}),
 	)
-	selection.OnTapped = func() { g.showWorkbenchMenu(selection, selectionMenu) }
+
 	more := compactButton("更多", nil)
 	more.SetIcon(theme.MenuDropDownIcon())
 	more.OnTapped = func() {
@@ -272,27 +270,23 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		for _, item := range []struct {
 			button *widget.Button
 			label  string
-		}{{frames, "刷新设备画面"}, {external, "打开外部窗口"}, {create, "创建模拟器"}, {selection, "选择设备"}, {start, "启动选中模拟器"}} {
+		}{{frames, "刷新设备画面"}, {external, "打开外部窗口"}, {create, "创建模拟器"}, {selection, "选中显示的在线设备"}, {clear, "清空全部选择"}} {
 			if !item.button.Visible() {
 				button := item.button
-				if button == selection {
-					menu.Items = append(menu.Items, fyne.NewMenuItem(item.label, func() { g.showWorkbenchMenu(more, selectionMenu) }))
-				} else {
-					menu.Items = append(menu.Items, fyne.NewMenuItem(item.label, button.OnTapped))
-				}
+				menu.Items = append(menu.Items, fyne.NewMenuItem(item.label, button.OnTapped))
 			}
 		}
-		menu.Items = append(menu.Items,
-			fyne.NewMenuItem("关闭选中模拟器…", g.stopWorkbenchSelection),
-			fyne.NewMenuItem("删除选中模拟器…", g.showSelectedDeleteAVDDialog),
+		selectOther := fyne.NewMenuItem("其他选择方式", nil)
+		selectOther.ChildMenu = selectionMenu
+		menu.Items = append(menu.Items, selectOther,
 			fyne.NewMenuItemSeparator(),
 			fyne.NewMenuItem("设备统计", func() { g.showInfo(controlSummaryText(g.entries)) }),
 		)
 		g.showWorkbenchMenu(more, menu)
 	}
-	g.registerActionButtons(scan, frames, external, create, start, selection, more)
+	g.registerActionButtons(scan, frames, external, create, clear, selection, more)
 
-	buttons := []*widget.Button{scan, frames, view, external, create, selection, start, more}
+	buttons := []*widget.Button{scan, frames, view, external, create, selection, clear, more}
 	objects := make([]fyne.CanvasObject, len(buttons))
 	for i, button := range buttons {
 		objects[i] = button
@@ -302,14 +296,15 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	search := newCenteredSearchEntry()
 	search.OnChanged = func(value string) {
 		g.wallSearch = strings.TrimSpace(value)
+		g.updateSelectedLabel()
 		g.renderControlCenter()
 	}
 	g.wallSearchEntry = &search.Entry
-	density := newCenteredDensitySelect([]string{"画面：小", "画面：标准", "画面：高清"}, func(label string) {
-		g.setControlDensity(controlDensityKeyByLabel(strings.TrimPrefix(label, "画面：")))
+	density := newCenteredDensitySelect([]string{"大小：小", "大小：标准", "大小：高清"}, func(label string) {
+		g.setControlDensity(controlDensityKeyByLabel(strings.TrimPrefix(label, "大小：")))
 	})
 	g.controlDensitySelect = &density.Select
-	g.controlDensitySelect.SetSelected("画面：" + controlDensityLabel(g.controlDensity))
+	g.controlDensitySelect.SetSelected("大小：" + controlDensityLabel(g.controlDensity))
 	left := container.New(centeredRowLayout{}, g.wallLibraryButton, container.New(centeredControlLayout{width: 112}, density), container.New(centeredControlLayout{width: 160}, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()})))
 	row := container.NewBorder(nil, nil, left, nil, toolbar)
 	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.New(workbenchRowInsetLayout{vertical: theme.Padding()}, row)), nil, nil, nil, container.NewPadded(workspace)))
@@ -322,49 +317,34 @@ func (g *GUIApp) showWorkbenchMenu(button *widget.Button, menu *fyne.Menu) {
 	popup.ShowAtPosition(position.Add(fyne.NewPos(0, button.Size().Height)))
 }
 
-func (g *GUIApp) showWallViewDialog(view *widget.Button) {
-	search := widget.NewEntry()
-	search.SetPlaceHolder("设备名称、编号或型号")
-	search.SetText(g.wallSearch)
-	state := widget.NewSelect([]string{wallStateAll, wallStateReady, wallStateStopped, wallStateStarting, wallStateError}, nil)
-	state.SetSelected(wallStateAll)
-	if g.wallStateFilter != "" {
-		state.SetSelected(g.wallStateFilter)
-	}
-	density := widget.NewSelect(controlDensityLabels(), nil)
-	labels := map[string]string{controlDensitySmall: "小", controlDensityStandard: "标准", controlDensityHD: "高清"}
-	density.SetSelected(labels[g.controlDensity])
-	reset := compactButton("重置筛选", func() { search.SetText(""); state.SetSelected(wallStateAll) })
-	content := container.NewVBox(
-		widget.NewLabel("搜索设备"), search,
-		widget.NewLabel("设备状态"), state,
-		widget.NewLabel("画面大小"), density,
-		reset, wrappedLabel("筛选只影响显示，已勾选的隐藏设备仍在选择范围内。"),
-	)
-	d := dialog.NewCustomConfirm("设备视图", "应用", "取消", content, func(ok bool) {
-		if !ok {
-			return
-		}
-		g.wallSearch = strings.TrimSpace(search.Text)
-		if g.wallSearchEntry != nil {
-			g.wallSearchEntry.SetText(g.wallSearch)
-		}
-		g.wallStateFilter = state.Selected
-		for key, label := range labels {
-			if label == density.Selected {
-				g.setControlDensity(key)
+func (g *GUIApp) showWallStateMenu(button *widget.Button) {
+	menu := fyne.NewMenu("设备状态")
+	for _, state := range []string{wallStateAll, wallStateReady, wallStateStopped, wallStateStarting, wallStateError} {
+		value := state
+		item := fyne.NewMenuItem(state, func() {
+			g.wallStateFilter = value
+			if value == wallStateAll {
+				button.SetText("状态")
+			} else {
+				button.SetText(value)
 			}
+			g.updateSelectedLabel()
+			g.renderControlCenter()
+		})
+		item.Checked = g.wallStateFilter == state || (state == wallStateAll && g.wallStateFilter == "")
+		menu.Items = append(menu.Items, item)
+	}
+	menu.Items = append(menu.Items, fyne.NewMenuItemSeparator(), fyne.NewMenuItem("清除搜索与状态筛选", func() {
+		g.wallStateFilter = wallStateAll
+		button.SetText("状态")
+		g.wallSearch = ""
+		if g.wallSearchEntry != nil {
+			g.wallSearchEntry.SetText("")
 		}
-		if g.wallSearch != "" || (g.wallStateFilter != "" && g.wallStateFilter != wallStateAll) {
-			view.SetText("筛选")
-		} else {
-			view.SetText("视图")
-		}
+		g.updateSelectedLabel()
 		g.renderControlCenter()
-	}, g.activeDialogWindow())
-	d.Resize(fyne.NewSize(420, 390))
-	d.Show()
-	g.activeDialogWindow().Canvas().Focus(search)
+	}))
+	g.showWorkbenchMenu(button, menu)
 }
 
 func (g *GUIApp) selectVisibleWallEntries() { g.selectVisibleWallState(wallStateAll) }
@@ -399,9 +379,33 @@ func (g *GUIApp) stopWorkbenchSelection() {
 	}
 	g.confirmAction("确认关闭选中模拟器", plan.details(), func() {
 		g.runEntryBatchAction(plan.summary(), plan.Entries, func(entry core.DeviceEntry) error {
-			return g.backend.GUICloseDeviceConfirmed(entry.Active.Serial, entry.Active.Serial)
+			return stopSelectedEmulator(entry, g.backend.GUICloseAVD, g.backend.GUICloseDeviceConfirmed)
 		})
 	})
+}
+
+// Selection may contain running AVD processes that have not connected to ADB.
+// Resolve those by AVD name instead of dereferencing a missing Active device.
+func stopSelectedEmulator(entry core.DeviceEntry, closeAVD func(string) error, closeSerial func(string, string) error) error {
+	if entry.Active != nil && !entry.Active.IsEmulator {
+		return fmt.Errorf("批量关闭只支持模拟器：%s", entry.Label)
+	}
+	if entry.Active != nil && entry.Active.State == "device" && strings.TrimSpace(entry.Active.Serial) != "" {
+		serial := entry.Active.Serial
+		return closeSerial(serial, serial)
+	}
+	if entry.AVD != nil && (entry.Running || entry.Active != nil && entry.Active.IsEmulator) && strings.TrimSpace(entry.AVD.Name) != "" {
+		return closeAVD(entry.AVD.Name)
+	}
+	if entry.Active != nil && entry.Active.IsEmulator {
+		if name := strings.TrimSpace(entry.Active.AVDName); name != "" {
+			return closeAVD(name)
+		}
+		if serial := strings.TrimSpace(entry.Active.Serial); serial != "" {
+			return closeSerial(serial, serial)
+		}
+	}
+	return fmt.Errorf("无法识别要关闭的运行中模拟器：%s", entry.Label)
 }
 
 func (g *GUIApp) setWorkbenchTarget() {
@@ -435,7 +439,7 @@ func (workbenchToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 	if len(objects) != 8 {
 		return
 	}
-	widths := []float32{60, 60, 60, 74, 60, 78, 94, 78}
+	widths := []float32{60, 84, 60, 74, 60, 64, 52, 78}
 	gap := theme.Padding()
 	show := []bool{true, false, true, false, false, false, false, true}
 	used := widths[0] + widths[2] + widths[7] + 2*gap
@@ -621,7 +625,7 @@ func (g *GUIApp) setControlDensity(key string) {
 	g.controlDensity = key
 	g.app.Preferences().SetString("wall.density", key)
 	if g.controlDensitySelect != nil {
-		label := "画面：" + controlDensityLabel(key)
+		label := "大小：" + controlDensityLabel(key)
 		if g.controlDensitySelect.Selected != label {
 			g.controlDensitySelect.SetSelected(label)
 		}

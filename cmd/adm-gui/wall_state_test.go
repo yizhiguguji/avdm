@@ -59,13 +59,13 @@ func TestDeviceWallPreservesSessionAcrossScanSelectionAndDensity(t *testing.T) {
 	g.wallSearch = ""
 	g.controlHidden["one"] = true
 	g.renderControlCenter()
-	if g.controlCards["one"] != card || !card.hidden || stopped != 0 || !card.realtime {
-		t.Fatal("hiding the preview destroyed a live session")
+	if g.controlCards["one"] != card || !card.hidden || stopped != 1 || card.realtime {
+		t.Fatal("hiding the preview must stop its live stream")
 	}
 	g.controlHidden["one"] = false
 	g.renderControlCenter()
-	if g.controlCards["one"] != card || !card.wall.visible || stopped != 0 {
-		t.Fatal("restoring the preview recreated its session")
+	if g.controlCards["one"] != card || !card.wall.visible || stopped != 1 {
+		t.Fatal("restoring the preview must retain its card")
 	}
 }
 

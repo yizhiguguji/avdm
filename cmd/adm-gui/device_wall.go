@@ -65,7 +65,7 @@ func (g *GUIApp) renderControlCenter() {
 			card = g.controlCards[entry.Key]
 		}
 		card.wall.visible = true
-		card.hidden = g.controlHidden[entry.Key]
+		g.reconcileControlCardHidden(entry.Key, card, g.controlHidden[entry.Key])
 		g.updateWallCardSize(card, spec)
 		if card.hidden {
 			card.preview.setMessage("画面已隐藏")
@@ -136,38 +136,29 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 	independent := compactButton("窗口", func() { g.openIndependentDeviceWindow(key, card.entry.Label) })
 	home := compactButton("主页", func() { g.keyEventDevice(serial, "主页", 3) })
 	back := compactButton("返回", func() { g.keyEventDevice(serial, "返回", 4) })
+	target := compactButton("主目标", func() {
+		g.runAction("设为主目标 "+card.entry.Label, func() error { return g.backend.GUISetCurrentDevice(key) })
+	})
+	manage := compactButton("管理", func() { g.showControlDeviceManageDialog(card.entry) })
+	notifications := compactButton("通知", func() { g.statusBarDevice(serial, "通知栏", "notifications") })
+	hide := compactButton("隐藏", func() { g.setControlCardHidden(key, !card.hidden) })
+	close := compactButton("关闭", func() { g.showCloseEntryDialog(card.entry) })
 	more := compactButton("更多", nil)
 	more.SetIcon(theme.MenuDropDownIcon())
 	more.OnTapped = func() {
-		hideLabel := "隐藏画面"
-		if card.hidden {
-			hideLabel = "显示画面"
-		}
-		menu := fyne.NewMenu("设备操作",
+		menu := fyne.NewMenu("设备信息",
 			fyne.NewMenuItem("复制设备名称", func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) }),
-			fyne.NewMenuItem("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }),
-			fyne.NewMenuItem("设为主目标", func() {
-				g.runAction("设为主目标 "+card.entry.Label, func() error { return g.backend.GUISetCurrentDevice(key) })
-			}),
-			fyne.NewMenuItem("管理设备…", func() { g.showControlDeviceManageDialog(card.entry) }),
-			fyne.NewMenuItem("展开通知栏", func() { g.statusBarDevice(serial, "通知栏", "notifications") }),
-			fyne.NewMenuItem(hideLabel, func() {
-				if g.controlHidden == nil {
-					g.controlHidden = map[string]bool{}
-				}
-				g.controlHidden[key] = !card.hidden
-				g.renderControlCenter()
-			}),
-			fyne.NewMenuItemSeparator(), fyne.NewMenuItem("关闭设备…", func() { g.showCloseEntryDialog(card.entry) }))
+			fyne.NewMenuItem("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }))
 		driver := g.app.Driver()
 		popup := widget.NewPopUpMenu(menu, driver.CanvasForObject(more))
 		popup.ShowAtPosition(driver.AbsolutePositionForObject(more).Add(fyne.NewPos(0, more.Size().Height)))
 	}
-	g.registerActionButtons(independent, home, back)
+	g.registerActionButtons(independent, home, back, target, notifications)
 	card.wall.previewBox = container.NewGridWrap(spec.previewSize, previewInteractiveObject(preview))
 	header := container.NewBorder(nil, nil, selected, more, container.NewStack(title, newCopyTapLayer(func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) })))
-	actions := container.NewGridWithColumns(3, back, home, independent)
-	card.wall.object = controlCardSurface(container.NewVBox(header, container.NewCenter(card.wall.previewBox), container.NewThemeOverride(status, captionTheme{g.app.Settings().Theme()}), actions))
+	actions := container.NewGridWithColumns(4, target, manage, independent, hide, back, home, notifications, close)
+	identity := container.NewStack(container.NewThemeOverride(status, captionTheme{g.app.Settings().Theme()}), newCopyTapLayer(func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }))
+	card.wall.object = controlCardSurface(container.NewVBox(header, container.NewCenter(card.wall.previewBox), identity, actions))
 	return card.wall.object
 }
 
@@ -195,7 +186,7 @@ func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObjec
 	if state == wallStateReady {
 		status.TextStyle.Bold = true
 	}
-	manage := compactButton("更多", func() { g.showControlDeviceManageDialog(entry) })
+	manage := compactButton("管理", func() { g.showControlDeviceManageDialog(entry) })
 	actions := container.NewHBox()
 	if entry.AVD != nil && !entry.Running && entry.Active == nil {
 		name := entry.AVD.Name
@@ -595,31 +586,6 @@ func controlDensityKeyByLabel(label string) string {
 }
 
 // A shared table rhythm keeps metadata and row actions aligned across devices.
-type libraryRowLayout struct{}
-
-func (libraryRowLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(320, 64) }
-func (libraryRowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) != 5 {
-		return
-	}
-	typeWidth := float32(120)
-	if size.Width < 680 {
-		typeWidth = 0
-	}
-	widths := []float32{32, max(100, size.Width-32-typeWidth-120-160-32), typeWidth, 120, 160}
-	x := float32(8)
-	for i, o := range objects {
-		if widths[i] == 0 {
-			o.Hide()
-			continue
-		}
-		o.Show()
-		h := min(size.Height, o.MinSize().Height)
-		o.Move(fyne.NewPos(x, (size.Height-h)/2))
-		o.Resize(fyne.NewSize(widths[i], h))
-		x += widths[i] + 4
-	}
-}
 func libraryTableHeader() fyne.CanvasObject {
 	labels := []fyne.CanvasObject{widget.NewLabel(""), widget.NewLabelWithStyle("设备", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewLabel("类型"), widget.NewLabel("状态"), widget.NewLabel("操作")}
 	return container.NewStack(canvas.NewRectangle(admColorPanelBG2), container.New(libraryRowLayout{}, labels...))
@@ -660,4 +626,52 @@ func controlCopyIdentifier(entry core.DeviceEntry) string {
 		return entry.AVD.Name
 	}
 	return entry.Key
+}
+
+// Hiding is a resource decision, not just a paint flag. Invalidate pending
+// connection generations before cancellation so late callbacks cannot revive it.
+func (g *GUIApp) reconcileControlCardHidden(key string, card *controlCardView, hidden bool) {
+	if card.hidden != hidden {
+		card.hidden = hidden
+		card.wall.generation++
+		card.wall.connecting = false
+		card.wall.probed = false
+		card.wall.lastProbe = time.Time{}
+		if hidden {
+			if stop := g.controlRealtimeStops[key]; stop != nil {
+				stop()
+			}
+			delete(g.controlRealtimeStops, key)
+			card.realtime = false
+			card.wall.disconnected = false
+		}
+	}
+	// The card object is reused across scans, so its toggle label must follow state.
+	updateControlHideLabel(card.wall.object, hidden)
+}
+func updateControlHideLabel(object fyne.CanvasObject, hidden bool) {
+	switch o := object.(type) {
+	case *widget.Button:
+		if o.Text == "隐藏" || o.Text == "显示" {
+			if hidden {
+				o.SetText("显示")
+			} else {
+				o.SetText("隐藏")
+			}
+		}
+	case *fyne.Container:
+		for _, child := range o.Objects {
+			updateControlHideLabel(child, hidden)
+		}
+	}
+}
+func (g *GUIApp) setControlCardHidden(key string, hidden bool) {
+	if g.controlHidden == nil {
+		g.controlHidden = map[string]bool{}
+	}
+	g.controlHidden[key] = hidden
+	if card := g.controlCards[key]; card != nil {
+		g.reconcileControlCardHidden(key, card, hidden)
+	}
+	g.renderControlCenter()
 }

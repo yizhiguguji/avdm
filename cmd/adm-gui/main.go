@@ -155,6 +155,8 @@ type GUIApp struct {
 	lastAPKSource     string
 	mirrorAlwaysOnTop map[string]bool
 
+	installScopeLabel     *widget.Label
+	selectionActions      fyne.CanvasObject
 	currentLabel          *widget.Label
 	selectedLabel         *widget.Label
 	toolSummary           *widget.Label
@@ -314,7 +316,9 @@ func (g *GUIApp) show() {
 
 func (g *GUIApp) build() {
 	g.currentLabel = widget.NewLabelWithStyle("主目标：未选择", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	g.currentLabel.Truncation = fyne.TextTruncateEllipsis
 	g.selectedLabel = widget.NewLabel("选中：未选择")
+	g.selectedLabel.Truncation = fyne.TextTruncateEllipsis
 	g.toolSummary = widget.NewLabel("工具：检测中")
 	g.busyLabel = widget.NewLabel("任务：空闲")
 	g.progress = widget.NewActivity()
@@ -496,9 +500,17 @@ func (g *GUIApp) buildLogRail() fyne.CanvasObject {
 	g.logRailSummary = canvas.NewText(g.logCollapsedSummary(), admColorMuted)
 	g.logRailSummary.TextSize = 12
 	details := compactButton("检查工具", g.showToolHealthDialog)
-	left := container.New(centeredRowLayout{}, details, compactStatus(g.toolSummary, 120), compactStatus(g.busyLabel, 190), g.progress)
-	right := container.New(centeredRowLayout{}, compactStatus(g.currentLabel, 200), compactStatus(g.selectedLabel, 180))
-	row := container.NewThemeOverride(container.NewBorder(nil, nil, left, right, nil), captionTheme{g.app.Settings().Theme()})
+	g.busyLabel.Truncation = fyne.TextTruncateEllipsis
+	left := container.New(centeredRowLayout{}, details, compactStatus(g.toolSummary, 100), compactStatus(g.busyLabel, 140), g.progress)
+	right := container.New(centeredRowLayout{}, compactStatus(g.currentLabel, 180), compactStatus(g.selectedLabel, 190))
+	start := compactButton("启动", g.startWorkbenchSelection)
+	stop := compactButton("关闭…", g.stopWorkbenchSelection)
+	remove := compactButton("删除…", g.showSelectedDeleteAVDDialog)
+	clear := compactButton("清选", g.clearWorkbenchSelection)
+	g.registerActionButtons(start, stop, remove)
+	g.selectionActions = container.New(centeredRowLayout{}, start, stop, remove, clear)
+	g.selectionActions.Hide()
+	row := container.NewThemeOverride(container.NewBorder(nil, nil, left, right, g.selectionActions), captionTheme{g.app.Settings().Theme()})
 	return collapsedBar(container.New(workbenchRowInsetLayout{}, row))
 }
 
@@ -896,17 +908,63 @@ func (g *GUIApp) restoreSelection() {
 	g.updateSelectedLabel()
 }
 
+func (g *GUIApp) selectionVisibilityCounts() (int, int) {
+	visible := map[string]bool{}
+	for _, entry := range g.wallVisibleEntries() {
+		visible[entry.Key] = true
+	}
+	selected, hidden := 0, 0
+	for _, entry := range g.selectedControlEntries() {
+		selected++
+		if !visible[entry.Key] {
+			hidden++
+		}
+	}
+	return selected, hidden
+}
+
 func (g *GUIApp) updateSelectedLabel() {
 	entries := g.selectedControlEntries()
-	if len(entries) == 0 {
-		g.selectedLabel.SetText("选中：未选择")
+	selected, hidden := g.selectionVisibilityCounts()
+	text := "选中：未选择"
+	if selected == 1 {
+		text = "选中：" + entries[0].Label
+	} else if selected > 1 {
+		text = fmt.Sprintf("选中：%d 台", selected)
+	}
+	if hidden > 0 {
+		text = fmt.Sprintf("选中：%d 台（隐藏 %d）", selected, hidden)
+	}
+	if g.selectedLabel != nil {
+		g.selectedLabel.SetText(text)
+	}
+	setVisible(g.selectionActions, selected > 0)
+	g.updateInstallScopeLabel(selected, hidden)
+	if g.logRail != nil {
+		g.logRail.Refresh()
+	}
+}
+
+func (g *GUIApp) updateInstallScopeLabel(selected, hidden int) {
+	if g.installScopeLabel == nil {
 		return
 	}
-	if len(entries) == 1 {
-		g.selectedLabel.SetText("选中：" + entries[0].Label)
-		return
+	text := "安装范围：主目标 · 未选择"
+	if selected > 0 {
+		text = fmt.Sprintf("安装范围：已勾选 %d 台", selected)
+		if hidden > 0 {
+			text += fmt.Sprintf("（含筛选隐藏 %d 台）", hidden)
+		}
+	} else if g.currentDevice != "" {
+		text = "安装范围：主目标 · " + g.currentDevice
 	}
-	g.selectedLabel.SetText(fmt.Sprintf("选中：%d 台", len(entries)))
+	g.installScopeLabel.SetText(text)
+}
+
+func (g *GUIApp) clearWorkbenchSelection() {
+	g.controlSelected = map[string]bool{}
+	g.updateSelectedLabel()
+	g.renderControlCenter()
 }
 
 func (g *GUIApp) runAction(name string, fn func() error) {
