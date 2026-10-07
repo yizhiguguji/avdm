@@ -283,7 +283,6 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 			}
 		}
 		menu.Items = append(menu.Items,
-			fyne.NewMenuItem("设为主目标（仅一台在线设备）", g.setWorkbenchTarget),
 			fyne.NewMenuItem("关闭选中模拟器…", g.stopWorkbenchSelection),
 			fyne.NewMenuItem("删除选中模拟器…", g.showSelectedDeleteAVDDialog),
 			fyne.NewMenuItemSeparator(),
@@ -306,31 +305,13 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		g.renderControlCenter()
 	}
 	g.wallSearchEntry = &search.Entry
-	operations := compactButton("设备操作", nil)
-	operations.SetIcon(theme.MenuDropDownIcon())
-	operations.Importance = widget.MediumImportance
-	operations.OnTapped = func() {
-		target := fyne.NewMenuItem(g.currentLabel.Text, nil)
-		target.Disabled = true
-		menu := fyne.NewMenu("设备操作", target, fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("安装应用…", func() { g.toggleRightPanel("install") }),
-			fyne.NewMenuItem("卸载应用…", func() { g.toggleRightPanel("uninstall") }),
-			fyne.NewMenuItem("输入文本…", func() { g.toggleRightPanel("message") }),
-			fyne.NewMenuItem("收起工具面板", func() { g.rightActive = ""; g.applyWorkbenchCollapseState() }),
-			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("重启主目标…", g.rebootCurrentDevice),
-			fyne.NewMenuItem("关闭主目标…", g.closeCurrentDevice))
-		g.showWorkbenchMenu(operations, menu)
-	}
-	g.logToolIcon = compactButton("日志", func() { g.logCollapsed = !g.logCollapsed; g.applyWorkbenchCollapseState() })
 	density := newCenteredDensitySelect([]string{"画面：小", "画面：标准", "画面：高清"}, func(label string) {
 		g.setControlDensity(controlDensityKeyByLabel(strings.TrimPrefix(label, "画面：")))
 	})
 	g.controlDensitySelect = &density.Select
 	g.controlDensitySelect.SetSelected("画面：" + controlDensityLabel(g.controlDensity))
 	left := container.New(centeredRowLayout{}, g.wallLibraryButton, container.New(centeredControlLayout{width: 112}, density), container.New(centeredControlLayout{width: 160}, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()})))
-	right := container.New(centeredRowLayout{}, operations, g.logToolIcon)
-	row := container.NewBorder(nil, nil, left, right, toolbar)
+	row := container.NewBorder(nil, nil, left, nil, toolbar)
 	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.New(workbenchRowInsetLayout{vertical: theme.Padding()}, row)), nil, nil, nil, container.NewPadded(workspace)))
 }
 
