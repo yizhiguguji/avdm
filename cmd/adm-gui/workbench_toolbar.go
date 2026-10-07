@@ -323,8 +323,8 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		g.showWorkbenchMenu(operations, menu)
 	}
 	g.logToolIcon = compactButton("日志", func() { g.logCollapsed = !g.logCollapsed; g.applyWorkbenchCollapseState() })
-	left := container.NewHBox(g.wallLibraryButton, container.NewGridWrap(fyne.NewSize(160, 32), search))
-	right := container.NewHBox(operations, g.logToolIcon)
+	left := container.New(centeredRowLayout{}, g.wallLibraryButton, container.New(centeredControlLayout{width: 160}, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()})))
+	right := container.New(centeredRowLayout{}, operations, g.logToolIcon)
 	row := container.NewBorder(nil, nil, left, right, toolbar)
 	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.NewPadded(row)), nil, nil, nil, container.NewPadded(workspace)))
 }
@@ -471,8 +471,57 @@ func (workbenchToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 		if !object.Visible() {
 			object.Show()
 		}
-		object.Move(fyne.NewPos(x, 0))
+		object.Move(fyne.NewPos(x, (size.Height-controlCompactControlHeight)/2))
 		object.Resize(fyne.NewSize(widths[index], controlCompactControlHeight))
 		x += widths[index] + gap
+	}
+}
+
+// Rows share a vertical center even when entries, labels and buttons have
+// different intrinsic heights. HBox otherwise places them at the top edge.
+type centeredRowLayout struct{}
+
+func (centeredRowLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	size := fyne.NewSize(0, 36)
+	count := 0
+	for _, object := range objects {
+		if !object.Visible() {
+			continue
+		}
+		min := object.MinSize()
+		size.Width += min.Width
+		size.Height = max(size.Height, min.Height)
+		count++
+	}
+	if count > 1 {
+		size.Width += float32(count-1) * theme.Padding()
+	}
+	return size
+}
+func (centeredRowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	x := float32(0)
+	for _, object := range objects {
+		if !object.Visible() {
+			continue
+		}
+		min := object.MinSize()
+		object.Resize(min)
+		object.Move(fyne.NewPos(x, (size.Height-min.Height)/2))
+		x += min.Width + theme.Padding()
+	}
+}
+
+// Single-line text widgets lay out text from their top inset, so retain their
+// intrinsic height and center them within a shared 36px control slot.
+type centeredControlLayout struct{ width float32 }
+
+func (l centeredControlLayout) MinSize([]fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(l.width, 36)
+}
+func (l centeredControlLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, object := range objects {
+		height := object.MinSize().Height
+		object.Resize(fyne.NewSize(size.Width, height))
+		object.Move(fyne.NewPos(0, (size.Height-height)/2))
 	}
 }

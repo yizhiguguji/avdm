@@ -11,12 +11,12 @@ type admTheme struct {
 }
 
 var (
-	admColorAppBG      = color.NRGBA{R: 236, G: 238, B: 241, A: 255}
+	admColorAppBG      = color.NRGBA{R: 220, G: 226, B: 234, A: 255}
 	admColorPanelBG    = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	admColorPanelBG2   = color.NRGBA{R: 247, G: 248, B: 250, A: 255}
-	admColorBorder     = color.NRGBA{R: 216, G: 221, B: 229, A: 255}
+	admColorPanelBG2   = color.NRGBA{R: 232, G: 237, B: 244, A: 255}
+	admColorBorder     = color.NRGBA{R: 151, G: 164, B: 183, A: 255}
 	admColorText       = color.NRGBA{R: 37, G: 42, B: 52, A: 255}
-	admColorMuted      = color.NRGBA{R: 98, G: 107, B: 122, A: 255}
+	admColorMuted      = color.NRGBA{R: 65, G: 79, B: 99, A: 255}
 	admColorPrimary    = color.NRGBA{R: 82, G: 101, B: 216, A: 255}
 	admColorDanger     = color.NRGBA{R: 205, G: 66, B: 70, A: 255}
 	admColorSuccess    = color.NRGBA{R: 40, G: 146, B: 105, A: 255}
@@ -33,13 +33,13 @@ func (t admTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) col
 	case theme.ColorNameMenuBackground:
 		return admColorPanelBG
 	case theme.ColorNameButton:
-		return color.NRGBA{R: 235, G: 238, B: 243, A: 255}
+		return color.NRGBA{R: 218, G: 226, B: 237, A: 255}
 	case theme.ColorNameDisabledButton:
 		return admColorPanelBG2
 	case theme.ColorNameDisabled:
 		return color.NRGBA{R: 124, G: 132, B: 144, A: 255}
 	case theme.ColorNamePlaceHolder:
-		return color.NRGBA{R: 107, G: 116, B: 130, A: 255}
+		return color.NRGBA{R: 72, G: 87, B: 108, A: 255}
 	case theme.ColorNameError:
 		return admColorDanger
 	case theme.ColorNameForeground:
@@ -114,6 +114,25 @@ func (t captionTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant)
 func (t captionTheme) Size(name fyne.ThemeSizeName) float32 {
 	if name == theme.SizeNameText {
 		return 12
+	}
+	return t.Theme.Size(name)
+}
+
+// The toolbar search shares its shape and height with adjacent actions.
+type toolbarSearchTheme struct{ fyne.Theme }
+
+func (t toolbarSearchTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	switch name {
+	case theme.ColorNameInputBackground:
+		return color.NRGBA{R: 224, G: 231, B: 240, A: 255}
+	case theme.ColorNameInputBorder:
+		return color.Transparent
+	}
+	return t.Theme.Color(name, variant)
+}
+func (t toolbarSearchTheme) Size(name fyne.ThemeSizeName) float32 {
+	if name == theme.SizeNameInputRadius {
+		return 6
 	}
 	return t.Theme.Size(name)
 }
