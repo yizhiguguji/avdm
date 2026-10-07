@@ -51,9 +51,11 @@ func (t admTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) col
 	case theme.ColorNamePrimary, theme.ColorNameHyperlink:
 		return admColorPrimary
 	case theme.ColorNameHover:
-		return color.NRGBA{R: 231, G: 234, B: 240, A: 255}
+		// Fyne composites this over each button color; an opaque value
+		// replaces primary/danger colors and destroys white-text contrast.
+		return color.NRGBA{A: 10}
 	case theme.ColorNamePressed:
-		return color.NRGBA{R: 222, G: 227, B: 241, A: 255}
+		return color.NRGBA{A: 20}
 	case theme.ColorNameInputBackground, theme.ColorNameOverlayBackground:
 		return admColorPanelBG
 	case theme.ColorNameInputBorder, theme.ColorNameSeparator:
