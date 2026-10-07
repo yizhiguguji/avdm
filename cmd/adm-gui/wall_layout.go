@@ -6,6 +6,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -34,6 +35,77 @@ func (l wallWorkspaceLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 		object.Move(fyne.NewPos(0, 0))
 		object.Resize(size)
 	}
+}
+
+// Keep the usual stopped list visible, but reclaim its column when a tool
+// pane would push an otherwise visible second online device below the fold.
+type onlineWorkspaceLayout struct {
+	g     *GUIApp
+	entry *widget.Button
+}
+
+func (l *onlineWorkspaceLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(320, 240) }
+func (l *onlineWorkspaceLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) != 3 {
+		return
+	}
+	previews, stopped, entry := objects[0], objects[1], objects[2]
+	count := len(l.g.wallStoppedGrid.Objects)
+	if count == 0 {
+		stopped.Hide()
+		entry.Hide()
+		previews.Show()
+		previews.Move(fyne.NewPos(0, 0))
+		previews.Resize(size)
+		return
+	}
+	if l.g.wallOnlineCount == 0 {
+		previews.Hide()
+		entry.Hide()
+		stopped.Show()
+		stopped.Move(fyne.NewPos(0, 0))
+		stopped.Resize(size)
+		return
+	}
+	const sideWidth float32 = 260
+	const gap float32 = 16
+	cardWidth := l.g.controlDensitySpec().cardSize.Width
+	columns := func(width float32) int { return max(0, int((width+gap)/(cardWidth+gap))) }
+	withList := columns(size.Width - sideWidth - gap)
+	withoutList := columns(size.Width)
+	wanted := min(2, l.g.wallOnlineCount)
+	collapse := size.Width < sideWidth+320+gap || (withList < wanted && withoutList > withList)
+	previews.Show()
+	if collapse {
+		stopped.Hide()
+		entry.Show()
+		l.entry.SetText(fmt.Sprintf("未启动与异常设备 (%d) · 展开", count))
+		entry.Move(fyne.NewPos(0, 0))
+		entry.Resize(fyne.NewSize(min(size.Width, entry.MinSize().Width), controlCompactControlHeight))
+		previews.Move(fyne.NewPos(0, controlCompactControlHeight+8))
+		previews.Resize(fyne.NewSize(size.Width, max(0, size.Height-controlCompactControlHeight-8)))
+	} else {
+		entry.Hide()
+		stopped.Show()
+		previews.Move(fyne.NewPos(0, 0))
+		previews.Resize(fyne.NewSize(size.Width-sideWidth-gap, size.Height))
+		stopped.Move(fyne.NewPos(size.Width-sideWidth, 0))
+		stopped.Resize(fyne.NewSize(sideWidth, size.Height))
+	}
+}
+
+func (g *GUIApp) showStoppedDeviceList() {
+	var rows []fyne.CanvasObject
+	for _, entry := range g.wallVisibleEntries() {
+		if !readyWallEntry(entry) {
+			rows = append(rows, g.buildStoppedDeviceCard(entry))
+		}
+	}
+	content := container.NewVScroll(container.NewVBox(rows...))
+	content.SetMinSize(fyne.NewSize(360, min(480, max(120, float32(len(rows))*88))))
+	d := dialog.NewCustom(fmt.Sprintf("未启动与异常设备 (%d)", len(rows)), "关闭", content, g.activeDialogWindow())
+	d.SetOnClosed(g.renderControlCenter)
+	d.Show()
 }
 
 type previewGeometry struct {
@@ -129,7 +201,8 @@ func (g *GUIApp) buildWallWorkspace() fyne.CanvasObject {
 	})
 	g.wallStoppedGrid = container.NewVBox()
 	g.wallStoppedPanel = container.New(stableMinWidthLayout{width: 260}, panelSurface("未启动与异常设备", "可直接启动，完整列表见设备库", container.NewVScroll(g.wallStoppedGrid)))
-	online := container.NewBorder(nil, nil, nil, g.wallStoppedPanel, container.NewVScroll(g.controlGrid))
+	stoppedEntry := compactButton("未启动与异常设备", g.showStoppedDeviceList)
+	online := container.New(&onlineWorkspaceLayout{g: g, entry: stoppedEntry}, container.NewVScroll(g.controlGrid), g.wallStoppedPanel, stoppedEntry)
 	library := container.NewBorder(libraryTableHeader(), nil, nil, nil, container.NewVScroll(g.wallLibraryGrid))
 	g.wallWorkspace = container.New(wallWorkspaceLayout{g: g}, online, library)
 	return g.wallWorkspace

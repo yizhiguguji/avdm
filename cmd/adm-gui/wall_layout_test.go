@@ -152,3 +152,62 @@ func TestLogSelectionSnapshotSurvivesIncomingLines(t *testing.T) {
 		t.Fatal("跟随最新未恢复显示")
 	}
 }
+
+func TestStoppedListReclaimsSecondPreviewColumnForToolPanel(t *testing.T) {
+	g := testWall(t)
+	g.controlDensity = controlDensitySmall
+	g.buildWallWorkspace()
+	g.wallOnlineCount = 2
+	g.wallStoppedGrid.Objects = []fyne.CanvasObject{widget.NewLabel("Stopped AVD"), widget.NewLabel("Offline AVD")}
+	online := g.wallWorkspace.Objects[0].(*fyne.Container)
+	l := online.Layout.(*onlineWorkspaceLayout)
+	online.Resize(fyne.NewSize(1200, 700))
+	if !g.wallStoppedPanel.Visible() || l.entry.Visible() {
+		t.Fatal("normal wide view lost visible stopped list")
+	}
+	width := online.Objects[0].Size().Width
+	if calculatePreviewGeometry(fyne.NewSize(width, 700), 2, g.controlDensitySpec().cardSize.Width, 100).columns != 2 {
+		t.Fatal("normal stopped list unnecessarily crowds previews")
+	}
+	online.Resize(fyne.NewSize(850, 700))
+	if g.wallStoppedPanel.Visible() || !l.entry.Visible() || l.entry.Text != "未启动与异常设备 (2) · 展开" {
+		t.Fatal("narrow view lost stopped list count or reclaim action")
+	}
+	if online.Objects[0].Size().Width != 850 || calculatePreviewGeometry(online.Objects[0].Size(), 2, g.controlDensitySpec().cardSize.Width, 100).columns != 2 {
+		t.Fatal("tool panel did not reclaim second preview column")
+	}
+	online.Resize(fyne.NewSize(1200, 700))
+	if !g.wallStoppedPanel.Visible() || l.entry.Visible() {
+		t.Fatal("stopped list does not return after tool closes")
+	}
+}
+
+func TestStoppedListRemainsVisibleWhenNoDevicesAreOnline(t *testing.T) {
+	g := testWall(t)
+	g.buildWallWorkspace()
+	g.wallStoppedGrid.Objects = []fyne.CanvasObject{widget.NewLabel("Stopped AVD")}
+	online := g.wallWorkspace.Objects[0].(*fyne.Container)
+	online.Resize(fyne.NewSize(360, 500))
+	if !g.wallStoppedPanel.Visible() || g.wallStoppedPanel.Size() != fyne.NewSize(360, 500) || online.Objects[0].Visible() {
+		t.Fatal("no-online view lost directly accessible stopped devices")
+	}
+}
+
+func TestCollapsedStoppedListOpensWithoutChangingWorkbenchView(t *testing.T) {
+	g := testWall(t)
+	g.window = g.app.NewWindow("test")
+	g.buildWallWorkspace()
+	g.window.SetContent(g.wallWorkspace)
+	g.entries = toolbarTestEntries()
+	g.renderControlCenter()
+	online := g.wallWorkspace.Objects[0].(*fyne.Container)
+	online.Resize(fyne.NewSize(850, 700))
+	entry := online.Layout.(*onlineWorkspaceLayout).entry
+	if !entry.Visible() {
+		t.Fatal("collapsed stopped list has no visible entry")
+	}
+	entry.OnTapped()
+	if g.wallLibraryMode || len(g.window.Canvas().Overlays().List()) != 1 {
+		t.Fatal("one-click list entry changes primary view or fails to open")
+	}
+}

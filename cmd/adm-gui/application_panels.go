@@ -17,6 +17,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	g.apkEntry.Wrapping = fyne.TextWrapBreak
 	g.apkEntry.SetMinRowsVisible(3)
 	g.allowDowngrade = widget.NewCheck("允许降级安装", nil)
+	g.installScopeLabel = wrappedLabel("安装范围：优先使用勾选设备；未勾选时使用主目标。")
 	downgradeHint := wrappedLabel("勾选后允许安装 versionCode 更低的 APK（adb install -r -d）。日常更新通常不用勾选。")
 
 	browseButton := widget.NewButton("选择 APK", func() {
@@ -37,7 +38,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	browseButton.Alignment = widget.ButtonAlignCenter
 	browseButton.Importance = widget.MediumImportance
 
-	installButton := widget.NewButton("安装 APK", func() {
+	installButton := widget.NewButton("安装到当前范围", func() {
 		source := g.apkSourceOrLast()
 		if source == "" {
 			g.showInfo("请输入 APK 路径或 URL。")
@@ -48,7 +49,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	installButton.Alignment = widget.ButtonAlignCenter
 	installButton.Importance = widget.HighImportance
 
-	multiInstallButton := widget.NewButton("安装到多设备", func() {
+	multiInstallButton := widget.NewButton("另选安装设备…", func() {
 		source := g.apkSourceOrLast()
 		if source == "" {
 			g.showInfo("请输入 APK 路径或 URL。")
@@ -59,7 +60,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	multiInstallButton.Alignment = widget.ButtonAlignCenter
 	multiInstallButton.Importance = widget.HighImportance
 
-	reinstallButton := widget.NewButton("重新安装上次 APK", func() {
+	reinstallButton := widget.NewButton("用上次 APK 安装", func() {
 		g.confirmInstallSelection("重新安装上次 APK", g.lastAPKSource)
 	})
 	reinstallButton.Alignment = widget.ButtonAlignCenter
@@ -69,14 +70,15 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 
 	return container.NewVBox(
 		sectionTitle("应用安装"),
+		g.installScopeLabel,
 		wrappedLabel("本地 APK 或 HTTP/HTTPS URL"),
 		g.apkEntry,
 		container.NewVBox(compactButtonBox(browseButton, 110), g.allowDowngrade),
 		downgradeHint,
 		container.NewVBox(
-			compactButtonBox(installButton, 92),
-			compactButtonBox(multiInstallButton, 126),
-			compactButtonBox(reinstallButton, 154),
+			compactButtonBox(installButton, 170),
+			compactButtonBox(multiInstallButton, 170),
+			compactButtonBox(reinstallButton, 170),
 		),
 	)
 }
@@ -527,10 +529,10 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 		compactButton("复制设备名称", func() { g.copyControlText("设备名称", controlCardTitle(entry)) }),
 		compactButton("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(entry)) }),
 	))
-	if entry.Running || (entry.Active != nil && entry.Active.IsEmulator) {
+	if windowLabel, closeLabel, available := deviceManagementWindowActions(entry); available {
 		sections = append(sections, container.NewHBox(
-			compactButton("聚焦窗口", func() { g.openIndependentDeviceWindow(entry.Key, entry.Label) }),
-			compactButton("关闭模拟器…", func() { g.showCloseEntryDialog(entry) }),
+			compactButton(windowLabel, func() { g.openIndependentDeviceWindow(entry.Key, entry.Label) }),
+			compactButton(closeLabel, func() { g.showCloseEntryDialog(entry) }),
 		))
 	}
 	if entry.AVD != nil {
@@ -699,6 +701,21 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 	closeButton.Importance = widget.HighImportance
 	d = dialog.NewCustomWithoutButtons("设备管理", container.NewVBox(content, container.NewCenter(closeButton)), g.activeDialogWindow())
 	d.Show()
+}
+
+// Button labels must describe the action performed by showCloseEntryDialog.
+// Running is also true for online phones, so it is not a device-type check.
+func deviceManagementWindowActions(entry core.DeviceEntry) (string, string, bool) {
+	if entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running {
+		return "聚焦窗口", "关闭模拟器…", true
+	}
+	if entry.Active != nil && entry.Active.State == "device" {
+		if strings.Contains(entry.Active.Serial, ":") {
+			return "打开独立窗", "断开网络设备…", true
+		}
+		return "打开独立窗", "关闭真机…", true
+	}
+	return "", "", false
 }
 
 // A list belongs to one device and one request generation. Switching target or
