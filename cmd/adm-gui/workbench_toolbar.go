@@ -584,6 +584,8 @@ type centeredSearchEntry struct {
 
 func newCenteredSearchEntry() *centeredSearchEntry {
 	e := &centeredSearchEntry{}
+	e.Wrapping = fyne.TextWrapOff
+	e.Scroll = container.ScrollHorizontalOnly
 	e.ExtendBaseWidget(e)
 	return e
 }
@@ -592,7 +594,9 @@ func (e *centeredSearchEntry) FocusLost()   { e.focused = false; e.Entry.FocusLo
 func (e *centeredSearchEntry) CreateRenderer() fyne.WidgetRenderer {
 	hint := canvas.NewText("搜索设备", admColorMuted)
 	hint.TextSize = 13
-	return &centeredSearchRenderer{WidgetRenderer: e.Entry.CreateRenderer(), entry: e, hint: hint}
+	base := e.Entry.CreateRenderer()
+	e.ExtendBaseWidget(e)
+	return &centeredSearchRenderer{WidgetRenderer: base, entry: e, hint: hint}
 }
 
 type centeredSearchRenderer struct {
@@ -606,6 +610,18 @@ func (r *centeredSearchRenderer) Objects() []fyne.CanvasObject {
 }
 func (r *centeredSearchRenderer) Layout(size fyne.Size) {
 	r.WidgetRenderer.Layout(size)
+	// Move the whole editable viewport, including selection and caret.
+	// Entry's default single-line layout uses a fixed top inset, which leaves
+	// its caret above the center of our taller toolbar control.
+	th := r.entry.Theme()
+	lineHeight := fyne.MeasureText("M", th.Size(theme.SizeNameText), r.entry.TextStyle).Height
+	textTop := (size.Height-lineHeight)/2 - r.entry.CursorPosition().Y
+	for _, object := range r.WidgetRenderer.Objects() {
+		if scroll, ok := object.(*container.Scroll); ok {
+			scroll.Move(fyne.NewPos(scroll.Position().X, textTop))
+			scroll.Resize(fyne.NewSize(scroll.Size().Width, max(0, size.Height-2*textTop)))
+		}
+	}
 	hintSize := r.hint.MinSize()
 	r.hint.Resize(hintSize)
 	r.hint.Move(fyne.NewPos((size.Width-hintSize.Width)/2, (size.Height-hintSize.Height)/2+toolbarTextOpticalOffset))
