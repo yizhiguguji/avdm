@@ -7,12 +7,39 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 // The wall and complete library share the workspace; neither reserves a
 // permanent column while the other view is active.
 type wallWorkspaceLayout struct{ g *GUIApp }
+
+// Fyne scrollbars overlay their content. Reserve the expanded bar width
+// inside the viewport so row actions remain clear even while dragging it.
+func deviceListScroll(content fyne.CanvasObject) *container.Scroll {
+	return container.NewVScroll(container.New(deviceListGutterLayout{}, content))
+}
+
+type deviceListGutterLayout struct{}
+
+func (deviceListGutterLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	height := float32(0)
+	for _, object := range objects {
+		if object.Visible() {
+			height = max(height, object.MinSize().Height)
+		}
+	}
+	return fyne.NewSize(0, height)
+}
+
+func (deviceListGutterLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	gutter := theme.ScrollBarSize() + theme.Padding()/2
+	for _, object := range objects {
+		object.Move(fyne.NewPos(0, 0))
+		object.Resize(fyne.NewSize(max(0, size.Width-gutter), size.Height))
+	}
+}
 
 func (l wallWorkspaceLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(320, 240) }
 func (l wallWorkspaceLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
@@ -101,7 +128,7 @@ func (g *GUIApp) showStoppedDeviceList() {
 			rows = append(rows, g.buildStoppedDeviceCard(entry))
 		}
 	}
-	content := container.NewVScroll(container.NewVBox(rows...))
+	content := deviceListScroll(container.NewVBox(rows...))
 	content.SetMinSize(fyne.NewSize(360, min(480, max(120, float32(len(rows))*88))))
 	d := dialog.NewCustom(fmt.Sprintf("未启动与异常设备 (%d)", len(rows)), "关闭", content, g.activeDialogWindow())
 	d.SetOnClosed(g.renderControlCenter)
@@ -200,7 +227,7 @@ func (g *GUIApp) buildWallWorkspace() fyne.CanvasObject {
 		g.wallWorkspace.Refresh()
 	})
 	g.wallStoppedGrid = container.NewVBox()
-	g.wallStoppedPanel = container.New(stableMinWidthLayout{width: 260}, panelSurface("未启动与异常设备", "可直接启动，完整列表见设备库", container.NewVScroll(g.wallStoppedGrid)))
+	g.wallStoppedPanel = container.New(stableMinWidthLayout{width: 260}, panelSurface("未启动与异常设备", "可直接启动，完整列表见设备库", deviceListScroll(g.wallStoppedGrid)))
 	stoppedEntry := compactButton("未启动与异常设备", g.showStoppedDeviceList)
 	online := container.New(&onlineWorkspaceLayout{g: g, entry: stoppedEntry}, container.NewVScroll(g.controlGrid), g.wallStoppedPanel, stoppedEntry)
 	library := container.NewBorder(libraryTableHeader(), nil, nil, nil, container.NewVScroll(g.wallLibraryGrid))
