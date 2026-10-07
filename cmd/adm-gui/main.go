@@ -368,7 +368,7 @@ func (g *GUIApp) build() {
 	g.vDock = container.New(verticalDockLayout{g: g}, g.hDock, g.logHandle, g.logStack)
 
 	// Root: working area followed by the right tool rail.
-	root := g.vDock
+	root := container.NewBorder(nil, nil, nil, g.buildRightIconBar(), g.vDock)
 	g.applyWorkbenchCollapseState()
 
 	page := root
@@ -470,10 +470,16 @@ func (g *GUIApp) buildRightIconBar() fyne.CanvasObject {
 		g.logCollapsed = !g.logCollapsed
 		g.applyWorkbenchCollapseState()
 	})
-	return iconBarColumn(g.installIcon, g.uninstallIcon, g.messageIcon, iconBarDivider(), container.NewCenter(mutedText("主目标")), reboot, close, iconBarDivider(), g.logToolIcon)
+	target := newWorkbenchRailButton("设主目标", nil, g.setWorkbenchTarget)
+	return iconBarColumn(g.installIcon, g.uninstallIcon, g.messageIcon, iconBarDivider(), target, reboot, close, iconBarDivider(), g.logToolIcon)
 }
 
 func iconBarColumn(items ...fyne.CanvasObject) fyne.CanvasObject {
+	for i, item := range items {
+		if _, ok := item.(*widget.Button); ok {
+			items[i] = container.NewGridWrap(fyne.NewSize(dockIconBarWidth, controlCompactControlHeight), item)
+		}
+	}
 	return container.NewStack(
 		roundedRect(admColorPanelBG, 8),
 		container.NewVBox(items...),
