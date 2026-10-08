@@ -10,17 +10,20 @@ type admTheme struct {
 	base fyne.Theme
 }
 
+// Fixed midnight palette: distinct canvas, raised surfaces and recessed inputs.
 var (
-	admColorAppBG      = color.NRGBA{R: 220, G: 226, B: 234, A: 255}
-	admColorPanelBG    = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	admColorPanelBG2   = color.NRGBA{R: 232, G: 237, B: 244, A: 255}
-	admColorBorder     = color.NRGBA{R: 151, G: 164, B: 183, A: 255}
-	admColorText       = color.NRGBA{R: 37, G: 42, B: 52, A: 255}
-	admColorMuted      = color.NRGBA{R: 65, G: 79, B: 99, A: 255}
-	admColorPrimary    = color.NRGBA{R: 82, G: 101, B: 216, A: 255}
-	admColorDanger     = color.NRGBA{R: 205, G: 66, B: 70, A: 255}
-	admColorSuccess    = color.NRGBA{R: 40, G: 146, B: 105, A: 255}
-	admColorPreviewBG  = color.NRGBA{R: 18, G: 21, B: 27, A: 255}
+	admColorAppBG      = color.NRGBA{R: 11, G: 17, B: 29, A: 255}
+	admColorAppBGEnd   = color.NRGBA{R: 17, G: 27, B: 43, A: 255}
+	admColorPanelBG    = color.NRGBA{R: 25, G: 36, B: 54, A: 255}
+	admColorPanelBG2   = color.NRGBA{R: 33, G: 48, B: 69, A: 255}
+	admColorBorder     = color.NRGBA{R: 43, G: 61, B: 83, A: 255}
+	admColorText       = color.NRGBA{R: 231, G: 239, B: 249, A: 255}
+	admColorMuted      = color.NRGBA{R: 160, G: 180, B: 202, A: 255}
+	admColorPrimary    = color.NRGBA{R: 84, G: 99, B: 222, A: 255}
+	admColorAccent     = color.NRGBA{R: 64, G: 198, B: 224, A: 255}
+	admColorDanger     = color.NRGBA{R: 208, G: 68, B: 84, A: 255}
+	admColorSuccess    = color.NRGBA{R: 64, G: 210, B: 166, A: 255}
+	admColorPreviewBG  = color.NRGBA{R: 6, G: 11, B: 19, A: 255}
 	admColorPreviewAlt = admColorPreviewBG
 )
 
@@ -33,13 +36,13 @@ func (t admTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) col
 	case theme.ColorNameMenuBackground:
 		return admColorPanelBG
 	case theme.ColorNameButton:
-		return color.NRGBA{R: 218, G: 226, B: 237, A: 255}
+		return admColorPanelBG2
 	case theme.ColorNameDisabledButton:
 		return admColorPanelBG2
 	case theme.ColorNameDisabled:
-		return color.NRGBA{R: 124, G: 132, B: 144, A: 255}
+		return color.NRGBA{R: 111, G: 132, B: 157, A: 255}
 	case theme.ColorNamePlaceHolder:
-		return color.NRGBA{R: 72, G: 87, B: 108, A: 255}
+		return admColorMuted
 	case theme.ColorNameError:
 		return admColorDanger
 	case theme.ColorNameForeground:
@@ -47,33 +50,39 @@ func (t admTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) col
 	case theme.ColorNameForegroundOnPrimary, theme.ColorNameForegroundOnError:
 		return color.White
 	case theme.ColorNameFocus:
-		return color.NRGBA{R: 82, G: 101, B: 216, A: 70}
-	case theme.ColorNamePrimary, theme.ColorNameHyperlink:
+		return color.NRGBA{R: 64, G: 198, B: 224, A: 85}
+	case theme.ColorNamePrimary:
 		return admColorPrimary
+	case theme.ColorNameHyperlink:
+		return admColorAccent
 	case theme.ColorNameHover:
 		// Fyne composites this over each button color; an opaque value
 		// replaces primary/danger colors and destroys white-text contrast.
-		return color.NRGBA{A: 10}
+		return color.NRGBA{R: 137, G: 190, B: 235, A: 25}
 	case theme.ColorNamePressed:
-		return color.NRGBA{A: 20}
-	case theme.ColorNameInputBackground, theme.ColorNameOverlayBackground:
+		return color.NRGBA{A: 45}
+	case theme.ColorNameInputBackground:
+		return color.NRGBA{R: 16, G: 25, B: 40, A: 255}
+	case theme.ColorNameOverlayBackground:
 		return admColorPanelBG
-	case theme.ColorNameInputBorder, theme.ColorNameSeparator:
+	case theme.ColorNameInputBorder:
+		return color.NRGBA{R: 113, G: 139, B: 169, A: 255}
+	case theme.ColorNameSeparator:
 		return admColorBorder
 	case theme.ColorNameScrollBar:
-		return color.NRGBA{R: 132, G: 143, B: 155, A: 150}
+		return color.NRGBA{R: 113, G: 151, B: 185, A: 170}
 	case theme.ColorNameScrollBarBackground:
 		return color.Transparent
 	case theme.ColorNameSelection:
-		return color.NRGBA{R: 82, G: 101, B: 216, A: 60}
+		return color.NRGBA{R: 64, G: 198, B: 224, A: 65}
 	case theme.ColorNameShadow:
-		return color.NRGBA{A: 25}
+		return color.NRGBA{A: 100}
 	case theme.ColorNameSuccess:
 		return admColorSuccess
 	case theme.ColorNameWarning:
 		return color.NRGBA{R: 245, G: 158, B: 11, A: 255}
 	default:
-		return t.base.Color(name, theme.VariantLight)
+		return t.base.Color(name, theme.VariantDark)
 	}
 }
 
@@ -126,7 +135,7 @@ type toolbarSearchTheme struct{ fyne.Theme }
 func (t toolbarSearchTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
 	switch name {
 	case theme.ColorNameInputBackground:
-		return color.NRGBA{R: 224, G: 231, B: 240, A: 255}
+		return color.NRGBA{R: 16, G: 27, B: 43, A: 255}
 	case theme.ColorNameInputBorder:
 		return color.Transparent
 	}

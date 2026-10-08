@@ -7,16 +7,15 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"image"
 	"time"
 )
 
 var controlDensityOptions = []controlDensitySpec{
-	{key: controlDensitySmall, label: "小", cardSize: controlCardSize(340, 584), previewSize: fyne.NewSize(300, 584)},
-	{key: controlDensityStandard, label: "标准", cardSize: controlCardSize(410, 724), previewSize: fyne.NewSize(360, 724)},
-	{key: controlDensityHD, label: "高清", cardSize: controlCardSize(500, 920), previewSize: fyne.NewSize(440, 920)},
+	{key: controlDensitySmall, label: "小", cardSize: controlCardSize(284, 440), previewSize: fyne.NewSize(244, 440)},
+	{key: controlDensityStandard, label: "标准", cardSize: controlCardSize(350, 584), previewSize: fyne.NewSize(310, 584)},
+	{key: controlDensityHD, label: "高清", cardSize: controlCardSize(430, 744), previewSize: fyne.NewSize(390, 744)},
 }
 
 func (g *GUIApp) renderControlCenter() {
@@ -134,31 +133,33 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 		}
 	}
 	independent := compactButton("窗口", func() { g.openIndependentDeviceWindow(key, card.entry.Label) })
-	home := compactButton("主页", func() { g.keyEventDevice(serial, "主页", 3) })
-	back := compactButton("返回", func() { g.keyEventDevice(serial, "返回", 4) })
+	home := newDeviceIconButton("主页", iconDeviceHome, func() { g.keyEventDevice(serial, "主页", 3) })
+	back := newDeviceIconButton("返回", iconDeviceBack, func() { g.keyEventDevice(serial, "返回", 4) })
 	target := compactButton("主目标", func() {
 		g.runAction("设为主目标 "+card.entry.Label, func() error { return g.backend.GUISetCurrentDevice(key) })
 	})
-	manage := compactButton("管理", func() { g.showControlDeviceManageDialog(card.entry) })
-	notifications := compactButton("通知", func() { g.statusBarDevice(serial, "通知栏", "notifications") })
-	hide := compactButton("隐藏", func() { g.setControlCardHidden(key, !card.hidden) })
-	close := compactButton("关闭", func() { g.showCloseEntryDialog(card.entry) })
-	more := compactButton("更多", nil)
-	more.SetIcon(theme.MenuDropDownIcon())
+	notifications := newDeviceIconButton("通知", iconDeviceNotifications, func() { g.statusBarDevice(serial, "通知栏", "notifications") })
+	more := newDeviceIconButton("更多", iconDeviceMore, nil)
 	more.OnTapped = func() {
-		menu := fyne.NewMenu("设备信息",
-			fyne.NewMenuItem("复制设备名称", func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) }),
-			fyne.NewMenuItem("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }))
+		more.hideHint()
+		menu := g.deviceCardMenu(card)
 		driver := g.app.Driver()
 		popup := widget.NewPopUpMenu(menu, driver.CanvasForObject(more))
 		popup.ShowAtPosition(driver.AbsolutePositionForObject(more).Add(fyne.NewPos(0, more.Size().Height)))
 	}
-	g.registerActionButtons(independent, home, back, target, notifications)
+	g.registerActionButtons(independent, &home.Button, &back.Button, target, &notifications.Button)
 	card.wall.previewBox = container.NewGridWrap(spec.previewSize, previewInteractiveObject(preview))
-	header := container.NewBorder(nil, nil, selected, more, container.NewStack(title, newCopyTapLayer(func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) })))
-	actions := container.NewGridWithColumns(4, target, manage, independent, hide, back, home, notifications, close)
+	connection := "USB"
+	if entry.Active.IsEmulator {
+		connection = "模拟器"
+	}
+	connectionLabel := canvas.NewText(connection, admColorSuccess)
+	connectionLabel.TextSize = 11
+	name := container.NewStack(title, newCopyTapLayer(func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) }))
+	header := container.New(deviceCardHeaderLayout{}, selected, name, container.NewCenter(connectionLabel), more)
+	actions := container.New(deviceActionRowLayout{}, target, independent, back, home, notifications)
 	identity := container.NewStack(container.NewThemeOverride(status, captionTheme{g.app.Settings().Theme()}), newCopyTapLayer(func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }))
-	card.wall.object = controlCardSurface(container.NewVBox(header, container.NewCenter(card.wall.previewBox), identity, actions))
+	card.wall.object = controlCardSurface(container.New(deviceCardStackLayout{}, header, actions, container.NewCenter(card.wall.previewBox), identity))
 	return card.wall.object
 }
 
@@ -646,24 +647,6 @@ func (g *GUIApp) reconcileControlCardHidden(key string, card *controlCardView, h
 			card.wall.disconnected = false
 		}
 	}
-	// The card object is reused across scans, so its toggle label must follow state.
-	updateControlHideLabel(card.wall.object, hidden)
-}
-func updateControlHideLabel(object fyne.CanvasObject, hidden bool) {
-	switch o := object.(type) {
-	case *widget.Button:
-		if o.Text == "隐藏" || o.Text == "显示" {
-			if hidden {
-				o.SetText("显示")
-			} else {
-				o.SetText("隐藏")
-			}
-		}
-	case *fyne.Container:
-		for _, child := range o.Objects {
-			updateControlHideLabel(child, hidden)
-		}
-	}
 }
 func (g *GUIApp) setControlCardHidden(key string, hidden bool) {
 	if g.controlHidden == nil {
@@ -674,4 +657,19 @@ func (g *GUIApp) setControlCardHidden(key string, hidden bool) {
 		g.reconcileControlCardHidden(key, card, hidden)
 	}
 	g.renderControlCenter()
+}
+
+func (g *GUIApp) deviceCardMenu(card *controlCardView) *fyne.Menu {
+	hideLabel := "隐藏画面"
+	if card.hidden {
+		hideLabel = "显示画面"
+	}
+	return fyne.NewMenu("设备操作",
+		fyne.NewMenuItem("管理设备…", func() { g.showControlDeviceManageDialog(card.entry) }),
+		fyne.NewMenuItem(hideLabel, func() { g.setControlCardHidden(card.entryKey, !card.hidden) }),
+		fyne.NewMenuItem("关闭设备…", func() { g.showCloseEntryDialog(card.entry) }),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("复制设备名称", func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) }),
+		fyne.NewMenuItem("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }),
+	)
 }

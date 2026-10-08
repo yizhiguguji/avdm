@@ -29,3 +29,33 @@ func TestFilteredSelectionRemainsExplicitAndReportsHiddenTargets(t *testing.T) {
 		t.Fatal("clear did not restore primary scope and hide batch actions")
 	}
 }
+
+func TestToolTargetMatchesActivePanelAcrossSelectionAndPanelChanges(t *testing.T) {
+	g := testWall(t)
+	g.rightHandle = newResizeHandle(true, nil)
+	g.logHandle = newResizeHandle(false, nil)
+	g.entries = []core.DeviceEntry{testWallEntry("one", "serial-one"), testWallEntry("two", "serial-two")}
+	g.controlSelected = map[string]bool{"one": true, "two": true}
+	g.currentDevice = "primary"
+	g.toolTargetLabel = widget.NewLabel("")
+	g.wallSearch = "one"
+	for _, panel := range []string{"install", "uninstall", "message", "install"} {
+		g.toggleRightPanel(panel)
+		want := "作用范围：主目标 · primary"
+		if panel == "install" {
+			want = "作用范围：已勾选 2 台（含隐藏 1 台）"
+		}
+		if g.toolTargetLabel.Text != want {
+			t.Fatalf("panel %s reports wrong target: %s", panel, g.toolTargetLabel.Text)
+		}
+	}
+	g.clearWorkbenchSelection()
+	if g.toolTargetLabel.Text != "作用范围：主目标 · primary" {
+		t.Fatalf("clearing selection lost primary target: %s", g.toolTargetLabel.Text)
+	}
+	g.currentDevice = ""
+	g.updateSelectedLabel()
+	if g.toolTargetLabel.Text != "作用范围：主目标 · 未选择" {
+		t.Fatalf("missing primary target reported as available: %s", g.toolTargetLabel.Text)
+	}
+}

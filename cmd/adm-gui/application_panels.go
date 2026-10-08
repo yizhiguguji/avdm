@@ -15,10 +15,10 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	g.apkEntry = widget.NewMultiLineEntry()
 	g.apkEntry.SetPlaceHolder("APK 文件路径或 URL")
 	g.apkEntry.Wrapping = fyne.TextWrapBreak
-	g.apkEntry.SetMinRowsVisible(3)
+	g.apkEntry.SetMinRowsVisible(2)
 	g.allowDowngrade = widget.NewCheck("允许降级安装", nil)
 	g.installScopeLabel = wrappedLabel("安装范围：优先使用勾选设备；未勾选时使用主目标。")
-	downgradeHint := wrappedLabel("勾选后允许安装 versionCode 更低的 APK（adb install -r -d）。日常更新通常不用勾选。")
+	downgradeHint := wrappedLabel("安装旧版本时开启。日常更新通常无需勾选。")
 
 	browseButton := widget.NewButton("选择 APK", func() {
 		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
@@ -58,7 +58,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 		g.showMultiInstallDialog(source)
 	})
 	multiInstallButton.Alignment = widget.ButtonAlignCenter
-	multiInstallButton.Importance = widget.HighImportance
+	multiInstallButton.Importance = widget.MediumImportance
 
 	reinstallButton := widget.NewButton("用上次 APK 安装", func() {
 		g.confirmInstallSelection("重新安装上次 APK", g.lastAPKSource)
@@ -66,6 +66,13 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	reinstallButton.Alignment = widget.ButtonAlignCenter
 	reinstallButton.Importance = widget.MediumImportance
 
+	historyButton := compactButton("上次来源", func() {
+		if strings.TrimSpace(g.lastAPKSource) == "" {
+			g.showInfo("还没有上次安装来源。")
+			return
+		}
+		g.showMessageDialog("上次 APK 来源", g.lastAPKSource, false)
+	})
 	g.registerActionButtons(browseButton, installButton, multiInstallButton, reinstallButton)
 
 	return container.NewVBox(
@@ -73,8 +80,8 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 		g.installScopeLabel,
 		wrappedLabel("本地 APK 或 HTTP/HTTPS URL"),
 		g.apkEntry,
-		container.NewVBox(compactButtonBox(browseButton, 110), g.allowDowngrade),
-		downgradeHint,
+		container.NewVBox(container.NewHBox(compactButtonBox(browseButton, 110), compactButtonBox(historyButton, 90)), g.allowDowngrade),
+		container.NewThemeOverride(downgradeHint, captionTheme{g.app.Settings().Theme()}),
 		container.NewVBox(
 			compactButtonBox(installButton, 170),
 			compactButtonBox(multiInstallButton, 170),

@@ -24,10 +24,10 @@ const controlPreviewInterval = 2 * time.Second
 const controlDensitySmall = "small"
 const controlDensityStandard = "standard"
 const controlDensityHD = "hd"
-const controlCardHeaderHeight float32 = 34
+const controlCardHeaderHeight float32 = 28
 const controlCardStatusHeight float32 = 24
-const controlCardButtonRowsHeight float32 = 36
-const controlCardPaddingHeight float32 = 32
+const controlCardButtonRowsHeight float32 = 28
+const controlCardPaddingHeight float32 = 24
 const mainWindowDefaultWidth float32 = 1280
 const mainWindowDefaultHeight float32 = 820
 const controlWindowDefaultWidth float32 = 1280
@@ -345,7 +345,7 @@ func (g *GUIApp) build() {
 	g.toolTargetLabel = widget.NewLabel("主目标：未选择")
 	g.toolTargetLabel.Wrapping = fyne.TextWrapWord
 	dismissTool := compactButton("收起", func() { g.rightActive = ""; g.applyWorkbenchCollapseState() })
-	toolHeader := container.NewBorder(nil, canvas.NewLine(admColorBorder), nil, dismissTool, g.toolTargetLabel)
+	toolHeader := container.NewBorder(nil, nil, nil, dismissTool, g.toolTargetLabel)
 	g.rightPanel = container.NewBorder(topSurface(container.NewPadded(toolHeader)), nil, nil, nil, container.NewStack(g.installPanel, g.uninstallPanel, g.messagePanel))
 
 	g.logPanel = g.buildLogPanel()
@@ -411,6 +411,7 @@ func (g *GUIApp) applyWorkbenchCollapseState() {
 // hides the rest. When nothing is active the whole right pane and its resize
 // handle collapse away (the dock layout gives them zero width).
 func (g *GUIApp) reconcileRightPanels() {
+	g.updateToolTargetLabel()
 	open := g.rightActive != ""
 	setVisible(g.installPanel, g.rightActive == "install")
 	setVisible(g.uninstallPanel, g.rightActive == "uninstall")
@@ -475,7 +476,7 @@ func (g *GUIApp) buildRightIconBar() fyne.CanvasObject {
 		g.applyWorkbenchCollapseState()
 	})
 	target := newWorkbenchRailButton("设主目标", nil, g.setWorkbenchTarget)
-	return iconBarColumn(g.installIcon, g.uninstallIcon, g.messageIcon, iconBarDivider(), target, reboot, close, iconBarDivider(), g.logToolIcon)
+	return iconBarColumn(railGroupLabel("应用"), g.installIcon, g.uninstallIcon, g.messageIcon, iconBarDivider(), railGroupLabel("设备"), target, reboot, close, iconBarDivider(), railGroupLabel("诊断"), g.logToolIcon)
 }
 
 func iconBarColumn(items ...fyne.CanvasObject) fyne.CanvasObject {
@@ -684,8 +685,7 @@ func compactPathMiddle(text string, maxRunes int) string {
 
 func sectionTitle(text string) fyne.CanvasObject {
 	label := canvas.NewText(text, admColorText)
-	label.TextStyle = fyne.TextStyle{Bold: true}
-	label.TextSize = 13
+	label.TextSize = 15
 	return label
 }
 
@@ -703,23 +703,17 @@ func roundedRect(fill color.Color, radius float32) *canvas.Rectangle {
 
 func appFrame(content fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(
-		canvas.NewRectangle(admColorAppBG),
+		canvas.NewLinearGradient(admColorAppBG, admColorAppBGEnd, 135),
 		content,
 	)
 }
 
 func collapsedBar(content fyne.CanvasObject) fyne.CanvasObject {
-	bg := roundedRect(admColorPanelBG2, 8)
-	bg.StrokeColor = admColorBorder
-	bg.StrokeWidth = 1
-	return container.NewStack(bg, content)
+	return container.NewStack(roundedRect(admColorPanelBG, 4), content)
 }
 
 func topSurface(content fyne.CanvasObject) fyne.CanvasObject {
-	bg := roundedRect(admColorPanelBG, 8)
-	bg.StrokeColor = admColorBorder
-	bg.StrokeWidth = 1
-	return container.NewStack(bg, content)
+	return container.NewStack(roundedRect(admColorPanelBG, 6), content)
 }
 
 func panelSurface(title, subtitle string, content fyne.CanvasObject) fyne.CanvasObject {
@@ -738,10 +732,7 @@ func panelSurfaceWithActions(title, subtitle string, actions fyne.CanvasObject, 
 		}
 		body = container.NewBorder(container.NewBorder(nil, nil, nil, actions, header), nil, nil, nil, content)
 	}
-	return container.NewStack(
-		roundedRect(admColorPanelBG, 8),
-		container.NewPadded(body),
-	)
+	return container.NewStack(roundedRect(admColorPanelBG, 6), container.NewPadded(body))
 }
 
 func wrappedLabel(text string) *widget.Label {
@@ -762,7 +753,7 @@ func stableWorkspacePanel(content fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func controlCardSurface(content fyne.CanvasObject) fyne.CanvasObject {
-	bg := roundedRect(admColorPanelBG, 6)
+	bg := roundedRect(admColorPanelBG, 10)
 	bg.StrokeColor = admColorBorder
 	bg.StrokeWidth = 1
 	return container.NewStack(bg, container.NewPadded(content))
@@ -773,7 +764,7 @@ func controlCardSurface(content fyne.CanvasObject) fyne.CanvasObject {
 // the layout.
 func rightToolPanel(content fyne.CanvasObject) fyne.CanvasObject {
 	return container.New(stableMinWidthLayout{width: workspacePanelMinWidth},
-		panelSurface("", "", container.NewVScroll(content)))
+		panelSurface("", "", deviceListScroll(content)))
 }
 
 func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
@@ -879,15 +870,17 @@ func (g *GUIApp) applyState(state core.GUIState, revealTop bool) {
 		}
 	}
 	if missing == 0 {
+		g.toolSummary.Importance = widget.MediumImportance
 		g.toolSummary.SetText("工具：已就绪")
 	} else {
+		g.toolSummary.Importance = widget.WarningImportance
 		g.toolSummary.SetText(fmt.Sprintf("工具：%d 项待处理", missing))
 	}
 	g.toolDetails = detailedToolStatus(state.Tools)
 	g.toolStatuses = append([]core.ToolStatus(nil), state.Tools...)
 	if g.apkEntry != nil && strings.TrimSpace(g.apkEntry.Text) == "" {
 		if state.LastAPKSource != "" {
-			g.apkEntry.SetPlaceHolder("留空使用上次：" + state.LastAPKSource)
+			g.apkEntry.SetPlaceHolder("输入 APK 路径或 URL；留空使用上次来源")
 		} else {
 			g.apkEntry.SetPlaceHolder("APK 文件路径或 URL")
 		}
@@ -931,7 +924,7 @@ func (g *GUIApp) updateSelectedLabel() {
 	selected, hidden := g.selectionVisibilityCounts()
 	text := "选中：未选择"
 	if selected == 1 {
-		text = "选中：" + entries[0].Label
+		text = "选中：" + controlCardTitle(entries[0])
 	} else if selected > 1 {
 		text = fmt.Sprintf("选中：%d 台", selected)
 	}
@@ -941,11 +934,38 @@ func (g *GUIApp) updateSelectedLabel() {
 	if g.selectedLabel != nil {
 		g.selectedLabel.SetText(text)
 	}
+	if g.controlSummary != nil {
+		ready := 0
+		for _, entry := range g.entries {
+			if readyWallEntry(entry) {
+				ready++
+			}
+		}
+		g.controlSummary.SetText(fmt.Sprintf("在线 %d · 已选 %d", ready, selected))
+	}
+	g.updateToolTargetLabel()
 	setVisible(g.selectionActions, selected > 0)
 	g.updateInstallScopeLabel(selected, hidden)
 	if g.logRail != nil {
 		g.logRail.Refresh()
 	}
+}
+
+func (g *GUIApp) updateToolTargetLabel() {
+	if g.toolTargetLabel == nil {
+		return
+	}
+	scope := "作用范围：主目标 · 未选择"
+	selected, hidden := g.selectionVisibilityCounts()
+	if g.rightActive == "install" && selected > 0 {
+		scope = fmt.Sprintf("作用范围：已勾选 %d 台", selected)
+		if hidden > 0 {
+			scope += fmt.Sprintf("（含隐藏 %d 台）", hidden)
+		}
+	} else if g.currentDevice != "" {
+		scope = "作用范围：主目标 · " + g.currentDevice
+	}
+	g.toolTargetLabel.SetText(scope)
 }
 
 func (g *GUIApp) updateInstallScopeLabel(selected, hidden int) {
@@ -2120,4 +2140,10 @@ func needsADBKeyboard(text string) bool {
 		}
 	}
 	return false
+}
+
+func railGroupLabel(text string) fyne.CanvasObject {
+	label := canvas.NewText(text, admColorMuted)
+	label.TextSize = 10
+	return container.NewGridWrap(fyne.NewSize(dockIconBarWidth, 22), container.NewCenter(label))
 }

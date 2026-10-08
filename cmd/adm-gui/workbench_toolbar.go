@@ -305,9 +305,11 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	})
 	g.controlDensitySelect = &density.Select
 	g.controlDensitySelect.SetSelected("大小：" + controlDensityLabel(g.controlDensity))
-	left := container.New(centeredRowLayout{}, g.wallLibraryButton, container.New(centeredControlLayout{width: 112}, density), container.New(centeredControlLayout{width: 160}, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()})))
-	row := container.NewBorder(nil, nil, left, nil, toolbar)
-	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.New(workbenchRowInsetLayout{vertical: theme.Padding()}, row)), nil, nil, nil, container.NewPadded(workspace)))
+	filters := container.New(workbenchFilterLayout{}, g.wallLibraryButton, density, container.NewThemeOverride(search, toolbarSearchTheme{g.app.Settings().Theme()}), container.NewThemeOverride(g.controlSummary, captionTheme{g.app.Settings().Theme()}))
+	commandLabel := mutedText("设备操作")
+	commands := container.NewBorder(nil, nil, container.New(centeredControlLayout{width: 72}, commandLabel), nil, toolbar)
+	header := container.NewVBox(filters, commands)
+	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.New(workbenchRowInsetLayout{vertical: 6}, header)), nil, nil, nil, container.NewPadded(workspace)))
 }
 
 func (g *GUIApp) showWorkbenchMenu(button fyne.CanvasObject, menu *fyne.Menu) {
@@ -445,7 +447,7 @@ func (workbenchToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 	}
 	gap := theme.Padding()
 	show := []bool{true, false, true, false, false, false, false, true}
-	used := widths[0] + widths[2] + widths[7] + 2*gap
+	used := widths[0] + widths[2] + widths[7] + 2*gap + 24
 	// Selection and start remain inline ahead of secondary operational tools.
 	for _, index := range []int{5, 6, 1, 3, 4} {
 		if used+gap+widths[index] <= size.Width {
@@ -463,6 +465,9 @@ func (workbenchToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 		}
 		if !object.Visible() {
 			object.Show()
+		}
+		if (index == 3 || index == 5) && x > 0 {
+			x += 12
 		}
 		object.Move(fyne.NewPos(x, (size.Height-controlCompactControlHeight)/2))
 		object.Resize(fyne.NewSize(widths[index], controlCompactControlHeight))
@@ -492,8 +497,8 @@ func (l workbenchRowInsetLayout) Layout(objects []fyne.CanvasObject, size fyne.S
 
 const toolbarTextOpticalOffset float32 = 3
 
-// Select and Entry use regular text; adjacent actions use bold text. Align
-// the visible regular glyphs without moving their shared 36px control bounds.
+// The density selector uses the native centered layout, matching the regular
+// toolbar buttons. Keep the wrapper to preserve its existing event handling.
 type centeredDensitySelect struct{ widget.Select }
 
 func newCenteredDensitySelect(options []string, onChanged func(string)) *centeredDensitySelect {
@@ -504,25 +509,7 @@ func newCenteredDensitySelect(options []string, onChanged func(string)) *centere
 func (s *centeredDensitySelect) CreateRenderer() fyne.WidgetRenderer {
 	base := s.Select.CreateRenderer()
 	s.ExtendBaseWidget(s)
-	return &centeredDensityRenderer{WidgetRenderer: base, selectWidget: s}
-}
-
-type centeredDensityRenderer struct {
-	fyne.WidgetRenderer
-	selectWidget *centeredDensitySelect
-}
-
-func (r *centeredDensityRenderer) Layout(size fyne.Size) {
-	r.WidgetRenderer.Layout(size)
-	for _, object := range r.WidgetRenderer.Objects() {
-		if _, ok := object.(*widget.RichText); ok {
-			object.Move(object.Position().Add(fyne.NewPos(0, toolbarTextOpticalOffset)))
-		}
-	}
-}
-func (r *centeredDensityRenderer) Refresh() {
-	r.WidgetRenderer.Refresh()
-	r.Layout(r.selectWidget.Size())
+	return base
 }
 
 // Every visible row item occupies a shared 36px slot so buttons, labels and
@@ -650,4 +637,44 @@ func (g *GUIApp) setControlDensity(key string) {
 		}
 	}
 	g.renderControlCenter()
+}
+
+// Filters have their own row, so tool panels never squeeze navigation and search.
+type workbenchFilterLayout struct{}
+
+func (workbenchFilterLayout) MinSize([]fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(320, controlCompactControlHeight)
+}
+func (workbenchFilterLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) != 4 {
+		return
+	}
+	const gap float32 = 8
+	libraryW := objects[0].MinSize().Width
+	densityW := float32(112)
+	summaryW := float32(0)
+	if size.Width >= 680 {
+		summaryW = 210
+		objects[3].Show()
+	} else {
+		objects[3].Hide()
+	}
+	searchW := max(80, min(240, size.Width-libraryW-densityW-summaryW-3*gap))
+	widths := []float32{libraryW, densityW, searchW, summaryW}
+	x := float32(0)
+	for i, object := range objects {
+		if !object.Visible() {
+			continue
+		}
+		y := float32(0)
+		height := controlCompactControlHeight
+		if i == 3 {
+			x = max(x, size.Width-summaryW)
+			height = object.MinSize().Height
+			y = (controlCompactControlHeight - height) / 2
+		}
+		object.Move(fyne.NewPos(x, y))
+		object.Resize(fyne.NewSize(widths[i], height))
+		x += widths[i] + gap
+	}
 }

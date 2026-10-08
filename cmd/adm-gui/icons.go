@@ -44,3 +44,10 @@ var (
 	iconLog = svgIcon("adm-log",
 		`<path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2l0 -12" /><path d="M7 8h10" /><path d="M7 12h10" /><path d="M7 16h10" />`)
 )
+
+var (
+	iconDeviceBack          = svgIcon("adm-device-back", `<path d="M15 5l-7 7l7 7"/>`)
+	iconDeviceHome          = svgIcon("adm-device-home", `<circle cx="12" cy="12" r="7"/>`)
+	iconDeviceNotifications = svgIcon("adm-device-notifications", `<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>`)
+	iconDeviceMore          = svgIcon("adm-device-more", `<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>`)
+)

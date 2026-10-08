@@ -1,87 +1,112 @@
-# Design
+# 设计文档
 
-## Source of truth
-- Status: Redesign baseline implemented in the application; current delivery recorded below, subject to user visual review.
-- Last refreshed: 2026-10-07
-- Primary product surfaces: 安卓设备矩阵 single-window desktop workbench, CLI.
-- Evidence reviewed: `cmd/adm-gui/main.go`, `README.md`, `docs/USER_GUIDE.md`, BrowserStack multi-device testing docs, Android Studio Device Manager docs, Genymotion SaaS UI docs, local UX review notes from this session.
+## 当前依据
 
-## Brand
-- Personality: Modern operations console, technical, dense, controlled.
-- Trust signals: Clear device state, predictable actions, visible task results, readable diagnostics, no misleading controls.
-- Avoid: Old desktop form layouts, default control dumping, large red danger blocks, excessive white space, unstable window-management promises.
+- 状态：工作台布局已在应用中实现，视觉效果仍需用户验收；后文保留历次方案与交付记录。
+- 最近更新：2026-10-08。
+- 主要界面：安卓设备矩阵单窗口桌面工作台、命令行界面。
+- 参考内容：`cmd/adm-gui/main.go`、`README.md`、`docs/USER_GUIDE.md`、多设备测试与设备管理官方文档，以及本地界面检查记录。
 
-## Product goals
-- Goals: Manage Android emulators/devices, install APKs, run common device actions, monitor multiple devices, inspect failures.
-- Non-goals: Become Android Studio, hide every technical detail, promise stable cross-process emulator window embedding.
-- Success signals: Users can identify usable devices, choose a target, run common actions, and understand failures without reading logs first.
+## 产品风格
 
-## Personas and jobs
-- Primary personas: Android app operators, QA testers, developers managing multiple AVDs.
-- User jobs: Start AVDs, choose a target, install APKs, control devices, inspect screenshots, diagnose adb/emulator/tool failures.
-- Key contexts of use: Repeated operational work, multiple devices, occasional flaky adb/emulator states.
+- 定位：现代设备操作台，信息紧凑、层级明确、操作可控。
+- 可信体验：清晰的设备状态、可预测的操作、可见的任务结果、可读的诊断信息。
+- 避免：传统表单堆叠、未经整理的默认控件、大块危险色、无效留白，以及无法保证的窗口管理承诺。
 
-## Information architecture
-- Primary navigation: Single-window device workbench.
-- Core routes/screens: Device wall workbench, create AVD dialog, batch start/delete dialogs, package uninstall dialog.
-- Content hierarchy: Device wall first, current target/selection second, task actions third, logs/diagnostics last.
+## 产品目标
 
-## Design principles
-- Device-first: A device card/list row must show name, state, serial/product, and available next action.
-- Stable actions: Remove or demote actions that repeatedly fail in normal use.
-- Progressive disclosure: Show common actions inline; move rare, advanced, or dangerous actions to secondary groups.
-- Single workbench: Device management, device wall, and task actions share one window; avoid a second primary Control Center window.
-- Tradeoffs: Dense operational UI is preferred over decorative whitespace; clarity is preferred over clever labels.
+- 管理 Android 模拟器与真机，安装 APK，执行常用设备操作，监看多台设备并排查失败。
+- 不扩展为完整的 Android Studio，也不承诺稳定的跨进程模拟器窗口嵌入。
+- 用户应能识别可用设备、选择目标、执行常用操作，并在无需先阅读日志的情况下理解失败原因。
 
-## Visual language
-- Color: Light neutral gray app background and white surfaces; blue for primary actions and focus, green for healthy state, red for destructive actions. Previews retain a dark background.
-- Typography: Compact hierarchy; bold device names, muted metadata, badge-like states; no oversized headings inside tool surfaces.
-- Spacing/layout rhythm: Tight but readable, with consistent row heights, compact toolbars, and no empty placeholder columns.
-- Shape/radius/elevation: 6-8px radius, low contrast borders, no nested card stacks.
-- Motion: No decorative motion.
-- Imagery/iconography: Use icons only when a Fyne/theme icon clearly improves scanability; otherwise concise text is acceptable.
+## 用户与任务
 
-## Components
-- Existing components to reuse: Fyne `widget.List`, `widget.Button`, `widget.Select`, `widget.Card`, `container.Border`, split containers.
-- New/changed components: Light neutral theme, device row, device wall card, black preview pane, status badge, compact action toolbar, collapsible log/task panel.
-- Variants and states: available, current, offline, unauthorized, running-but-not-ready, stopped, busy, error.
-- Token/component ownership: Device wall/session lifecycle in `device_wall.go` and `wall_state.go`; toolbar and selection planning in `workbench_toolbar.go`; application tools in `application_panels.go`; task results in `batch_tasks.go`.
+- 主要用户：安卓应用运营人员、测试人员，以及管理多个 AVD 的开发人员。
+- 主要任务：启动 AVD、选择目标、安装 APK、控制设备、查看截图、诊断 ADB、模拟器与工具故障。
+- 使用环境：反复执行设备操作，同时管理多台设备，偶尔遇到连接与进程状态异常。
 
-## Accessibility
-- Target standard: Keyboard usable for primary actions; readable contrast in default macOS appearance.
-- Keyboard/focus behavior: Primary controls must remain reachable by normal Fyne focus traversal.
-- Contrast/readability: Secondary metadata cannot be too light to read.
-- Screen-reader semantics: Prefer meaningful labels over unlabeled symbolic controls.
-- Reduced motion and sensory considerations: No flashing or animation-heavy surfaces.
+## 信息结构
 
-## Responsive behavior
-- Supported breakpoints/devices: macOS desktop windows from 1280x820 upward; optimize 1440x900 and larger.
-- Layout adaptations: One top row holds scan/selection/common actions. Secondary actions move into More when width is limited. No left action rail. Right text buttons open application tools or act on the main target; logs stay collapsible below. Stopped and abnormal entries use compact rows, with previews reserved for online devices.
-- Touch/hover differences: Desktop mouse/keyboard only.
+- 主要导航：单窗口设备工作台。
+- 核心界面：设备墙、设备库、创建 AVD、批量启动或删除、应用卸载。
+- 信息顺序：设备画面与状态、主目标与勾选范围、任务操作、日志与诊断。
 
-## Interaction states
-- Loading: Show per-action busy text and keep the rest of the UI usable.
-- Empty: Show next available action, not only "none".
-- Error: Explain the failed tool/action and the next repair step.
-- Success: Update affected device/card state and log one concise task result.
-- Disabled: Prefer hidden or disabled controls over buttons that open known-bad flows.
-- Offline/slow network: Mark devices as offline/unauthorized/running-not-ready with direct remediation.
+## 设计原则
 
-## Content voice
-- Tone: Direct, short, operational Chinese.
-- Terminology: Use "主目标" instead of "当前"; use "重新扫描" instead of vague "刷新"; use "截图" only for non-stream previews.
-- Microcopy rules: Avoid promising "实时" unless the action truly opens a low-latency stream; mark advanced/unstable actions as advanced.
+- 设备优先：设备卡片或列表行显示名称、状态、编号或型号，以及可执行的下一步。
+- 操作可靠：反复失败的流程应提供明确说明与恢复入口。
+- 逐步展开：常用动作直接显示，低频、高级和危险动作放入对应设备的菜单。
+- 单一工作台：设备管理、画面监看与任务操作共享一个窗口。
+- 信息密度服务操作，标签和层级优先保持清晰。
 
-## Implementation constraints
-- Framework/styling system: Go + Fyne; avoid large framework rewrites in this repo.
-- Design-token constraints: Fyne theming is limited; use the 安卓设备矩阵 light neutral theme and repo-local surface helpers before adding custom drawing.
-- Performance constraints: Avoid global adb screenshot storms; keep refresh scoped and paced; do not discard existing preview frames while a device list refresh is in progress.
-- Compatibility constraints: macOS Accessibility-dependent window movement is not a primary flow.
-- Test/screenshot expectations: Run `go test ./...`, `make build`, launch app, and screenshot major surfaces after visual changes.
+## 当前视觉规范
 
-## Open questions
-- [ ] Should scrcpy be restored as a primary manual-control flow for both emulator and physical devices? Owner: product. Impact: device-card and context actions.
-- [ ] What minimum number of devices should the workbench optimize for on a 1440x900 window? Owner: product. Impact: card dimensions.
+- 配色：深蓝渐变工作区，深色分层面板；主操作使用蓝紫色，链接与焦点使用青色，健康状态使用绿色，危险动作使用红色。
+- 字体：正文 14 点、行内图标 18 点；导航按钮使用常规字重，设备名称加粗，辅助信息降低强调程度。
+- 布局：顶部查找与显示设置、设备操作分为两行；卡片标题和操作区使用紧凑间距。
+- 形状：设备卡片 10 点圆角、单层细边框；顶部及工具面板 6 点圆角，底栏 4 点圆角。
+- 动效：不使用装饰动效，图标悬停提示不接管输入层，避免频闪。
+- 图标：返回、主页、通知和更多使用可说明用途的图标，保留键盘操作能力。
+
+## 组件与状态
+
+- 复用组件：Fyne 的 `widget.List`、`widget.Button`、`widget.Select`、`widget.Card`、边界布局与分隔容器。
+- 自定义组件：常规字重导航按钮、设备图标按钮与悬停提示、紧凑卡片布局、设备墙、可折叠日志和任务面板。
+- 设备状态：可用、主目标、离线、未授权、运行但未就绪、未启动、忙碌和错误。
+- 代码职责：`device_wall.go` 与 `wall_state.go` 管理设备墙和会话生命周期；`workbench_toolbar.go` 管理工具栏和操作范围；`application_panels.go` 管理应用任务；`batch_tasks.go` 管理批量结果。
+
+## 可访问性
+
+- 常用操作可通过键盘执行，在 macOS 默认外观中保持清晰对比度。
+- 主操作使用 Fyne 标准焦点遍历，图标按钮保留空格键触发和禁用状态。
+- 辅助文字需要可读，图标使用明确名称与悬停说明，低频动作在菜单中保留文字标签。
+- 不使用闪烁或大量动画。
+
+## 窗口自适应
+
+- 主要支持 1280×820 及以上的 macOS 窗口，并关注 1440×900 和更大窗口。
+- 顶部将筛选与操作分行，宽度不足时次要操作进入「更多」。
+- 右侧操作栏按应用、设备和诊断分组；工具面板按需展开，下方日志可折叠。
+- 未启动和异常设备使用紧凑列表，在线设备使用预览卡片。
+- 相同密度下卡片尺寸固定，最大化增加列数，画面区域可滚动。
+- 输入面向桌面鼠标和键盘。
+
+## 交互反馈
+
+- 加载：显示对应任务的忙碌状态，并保留其余可用操作。
+- 空状态：提供下一步入口。
+- 错误：说明失败的设备或工具、具体原因和恢复方式。
+- 成功：更新受影响设备的状态，记录简短任务结果。
+- 禁用：不可执行的动作应禁用或隐藏，避免进入已知失败流程。
+- 离线或网络缓慢：明确显示离线、未授权或运行但未就绪，并提供恢复操作。
+
+## 文案
+
+- 使用简体中文，简短、直接，明确目标和结果。
+- 单台操作目标称为「主目标」，批量范围称为「已勾选设备」。
+- 「截图」只表示非实时预览；只有实际低延迟画面才标为实时。
+- 高级或不稳定的动作需要说明限制，不承诺无法验证的结果。
+
+## 实现约束
+
+- 使用 Go 与 Fyne，保留既有设备后端和预览生命周期。
+- 优先使用项目主题与面板组件，必要时增加局部自定义绘制。
+- 限制后台 ADB 截图并发，按目标刷新；扫描设备列表时保留已有预览。
+- 真实设备镜像缺少辅助功能权限时使用启动参数重排；模拟器原生窗口操作保留权限恢复。
+- 验证包括 `go test ./...`、`go vet ./...`、构建及主要界面检查；真实设备与窗口行为单独说明验证范围。
+
+## 待确认事项
+
+- [ ] 是否统一使用 scrcpy 作为真机与模拟器的主要手动控制方式？影响设备卡片与菜单动作。
+- [ ] 1440×900 窗口应优先适配多少台设备？影响卡片密度与尺寸。
+
+## 2026-10-08 当前合入说明
+
+本轮合入深蓝渐变主题、顶部两行布局、按用途分组的右侧操作栏，以及设备卡片紧凑布局。卡片直接提供主目标、窗口和返回、主页、通知图标，管理、隐藏、关闭与复制位于更多菜单。图标悬停提示在自身渲染层显示，避免浮层抢占鼠标输入产生频闪。
+
+小、标准、高清的预览尺寸分别为 244×440、310×584、390×744。标题和操作区高度均为 28 点，减少预览上方留白。安装面板提供上次来源查看入口，普通安装优先使用勾选设备；卸载和输入仍针对主目标，面板范围提示随活动工具切换。
+
+下文为历史设计与验证记录，旧的浅色方案、单行工具栏、画面尺寸和八个直接按钮不代表当前界面。当前用法以[用户指南](docs/USER_GUIDE.md)为准。历史实际设备验证不等同于本轮已验证。
 
 ## 2026-10-07 团队实施计划与交付范围
 

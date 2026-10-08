@@ -190,7 +190,7 @@ func TestWorkbenchControlBoundsAndOpticalTextOffset(t *testing.T) {
 	renderer.Refresh()
 	for _, object := range renderer.Objects() {
 		if _, ok := object.(*widget.RichText); ok && object.Position() != before {
-			t.Fatal("optical correction accumulates on refresh")
+			t.Fatal("density text drifts on refresh")
 		}
 	}
 	hintRenderer := test.WidgetRenderer(search).(*centeredSearchRenderer)
@@ -235,5 +235,55 @@ func TestSearchCaretCenteredAcrossFocusTextAndRefresh(t *testing.T) {
 	search.FocusLost()
 	if !r.hint.Visible() {
 		t.Fatal("empty unfocused hint was not restored")
+	}
+}
+
+func TestDensityTextCenteredAcrossSelectionAndResize(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(admTheme{base: theme.DefaultTheme()})
+	density := newCenteredDensitySelect([]string{"大小：小", "大小：标准", "大小：高清"}, nil)
+	renderer := test.WidgetRenderer(density)
+	for _, height := range []float32{36, 44, 36} {
+		density.Resize(fyne.NewSize(112, height))
+		for _, label := range density.Options {
+			density.SetSelected(label)
+			renderer.Refresh()
+			for _, object := range renderer.Objects() {
+				if _, ok := object.(*widget.RichText); ok {
+					top := object.Position().Y
+					bottom := height - top - object.Size().Height
+					if top-bottom > 0.01 || bottom-top > 0.01 {
+						t.Fatalf("%s text not vertically centered at height %.0f: top %.2f bottom %.2f", label, height, top, bottom)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestFilterRowKeepsControlsWithinNarrowWorkspace(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(admTheme{base: theme.DefaultTheme()})
+	library := newReadableButton("设备库 (12)", nil)
+	density := newCenteredDensitySelect([]string{"大小：标准"}, nil)
+	density.SetSelected("大小：标准")
+	search := newCenteredSearchEntry()
+	summary := widget.NewLabel("在线 12 · 已选 2")
+	objects := []fyne.CanvasObject{library, density, search, summary}
+	for _, width := range []float32{320, 500, 680, 1200, 320} {
+		workbenchFilterLayout{}.Layout(objects, fyne.NewSize(width, 36))
+		for i, object := range objects {
+			if !object.Visible() {
+				continue
+			}
+			if object.Position().X < 0 || object.Position().X+object.Size().Width > width+.1 {
+				t.Fatalf("control %d clips at width %.0f: %v %v", i, width, object.Position(), object.Size())
+			}
+			if i < 3 && (object.Size().Height != 36 || object.Position().Y != 0) {
+				t.Fatal("filter controls lost shared center")
+			}
+		}
 	}
 }

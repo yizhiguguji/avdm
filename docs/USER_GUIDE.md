@@ -1,280 +1,223 @@
-# 安卓设备矩阵 User Guide
+# 安卓设备矩阵用户指南
 
-安卓设备矩阵 is a local helper for Android devices and Android Virtual Devices. It keeps
-the Android SDK tools separate from the 安卓设备矩阵 command so it does not conflict
-with `adb`, `emulator`, `avdmanager`, or `sdkmanager`.
+安卓设备矩阵是管理安卓真机与 Android 虚拟设备（AVD）的本地工具，提供图形界面和命令行界面。设备操作复用 Android SDK 的 `adb`、`emulator`、`avdmanager`、`sdkmanager`，不会与这些命令重名。
 
-## Build
+## 构建与安装
 
 ```bash
 make build
 ```
 
-This produces two user-facing artifacts:
+生成的文件：
 
-- `bin/adm` for command-line usage.
-- `dist/安卓设备矩阵.app` for the macOS desktop app.
+- `bin/adm`：命令行工具。
+- `dist/安卓设备矩阵.app`：macOS 桌面应用。
 
-To replace the locally installed desktop app:
+安装或替换本机应用：
 
 ```bash
 make build
 cp -R dist/安卓设备矩阵.app /Applications/安卓设备矩阵.app
 ```
 
-Use one stable copy in `/Applications` when possible. This makes macOS app
-search, Accessibility permission, and user support simpler than launching
-different ad-hoc copies from different folders.
+建议保留一个稳定的 `/Applications/安卓设备矩阵.app` 副本，方便系统搜索、辅助功能授权和问题排查。
 
-## macOS Dependency Bootstrap
+## macOS 依赖准备
 
-On a new macOS machine, run:
+新电脑上先安装 [Homebrew](https://brew.sh/)，再从源码目录执行：
 
 ```bash
 make deps-macos
 ```
 
-This calls `scripts/install-macos-deps.sh`. The script is also copied into the
-macOS app bundle as `安卓设备矩阵.app/Contents/Resources/install-macos-deps.sh`, so the
-GUI can run the same bootstrap from `工具` > `工具健康状态` > `安装/修复依赖`.
-The script is safe to run more than once:
+该命令运行 `scripts/install-macos-deps.sh`。应用包中也包含这个脚本，可以在「工具健康状态」中点击「安装/修复依赖」执行。脚本可重复运行，会：
 
-- It requires Homebrew and does not install Homebrew automatically.
-- It installs missing Homebrew packages: `go`, `android-commandlinetools`, and
-  `scrcpy`.
-- It accepts Android SDK licenses and installs the SDK runtime packages 安卓设备矩阵
-  expects: `platform-tools`, `emulator`, `platforms;android-36`, and
-  `system-images;android-36;google_apis_playstore;arm64-v8a`.
-- It prints the resolved paths for `go`, `adb`, `emulator`, `avdmanager`,
-  `sdkmanager`, and `scrcpy`.
+- 安装缺失的 Homebrew 软件包：`go`、`android-commandlinetools`、`scrcpy`。
+- 接受 Android SDK 许可，并安装 `platform-tools`、`emulator`、`platforms;android-36`、`system-images;android-36;google_apis_playstore;arm64-v8a`。
+- 输出 `go`、`adb`、`emulator`、`avdmanager`、`sdkmanager`、`scrcpy` 的实际路径。
 
-安卓设备矩阵 can also use tools installed by Android Studio. It searches explicit tool
-paths from configuration first, then `ANDROID_HOME`, `ANDROID_SDK_ROOT`, common
-Android SDK folders under the user home directory, Homebrew Android SDK folders,
-and finally `PATH`.
+脚本要求 Homebrew 已存在，不会自行安装 Homebrew 或请求 `sudo`。工具查找依次检查配置中的指定路径、`ANDROID_HOME`、`ANDROID_SDK_ROOT`、用户目录中的常见 SDK 位置、Homebrew SDK 目录及 `PATH`，也可复用 Android Studio 安装的工具。
 
-For distribution, copy `dist/安卓设备矩阵.app` to `/Applications`. The app includes the
-same dependency installer used by `make deps-macos`, so the target user does
-not need the source checkout for first-run repair. Homebrew must already be
-installed on the target machine; 安卓设备矩阵 does not install Homebrew and does not
-request sudo. The CLI artifact `bin/adm` can be distributed separately when
-only command-line workflows are needed.
+### 分发与首次运行
 
-Recommended first-run flow for another Mac:
+将 `dist/安卓设备矩阵.app` 复制到目标电脑的 `/Applications` 即可。依赖修复脚本已包含在应用内，目标用户不需要源码。只需要命令行功能时，可单独分发 `bin/adm`。
 
-1. Install Homebrew if it is missing.
-2. Copy `安卓设备矩阵.app` into `/Applications`.
-3. Open 安卓设备矩阵 and click `工具`.
-4. If any tool is missing, run `安装/修复依赖`.
-5. Click `重新检查` after the installer finishes.
-6. Grant Accessibility permission only if external emulator window tiling is
-   needed.
+1. 安装 Homebrew。
+2. 将应用复制到 `/Applications` 并打开。
+3. 点击底部「检查工具」进入工具健康状态。
+4. 若缺少工具，运行「安装/修复依赖」。
+5. 安装结束后点击「重新检查」。
+6. 如需聚焦或排列模拟器原生窗口，手动授予辅助功能权限。
 
-For production distribution, sign 安卓设备矩阵 with a stable signing identity.
-Development builds use ad-hoc signing by default. After replacing an
-ad-hoc-signed app, macOS may display an enabled `安卓设备矩阵.app` Accessibility entry
-that belongs to the previous binary identity. If external window tiling still
-reports missing permission, remove the old entry, add `/Applications/安卓设备矩阵.app`
-again, and restart 安卓设备矩阵.
+正式分发应保持稳定签名身份。临时签名的应用替换后，macOS 可能保留旧版本的辅助功能授权条目。若开关已开启但新进程仍未授权，请退出应用，移除旧条目，重新添加 `/Applications/安卓设备矩阵.app`，开启权限并重新启动。
 
-## GUI
-
-Start the desktop UI:
+## 桌面工作台
 
 ```bash
 open dist/安卓设备矩阵.app
 ```
 
-Copy `安卓设备矩阵.app` into `/Applications` if you want it to appear in macOS
-application search.
+工作台采用深蓝渐变背景和分层面板，设备管理、画面监看与任务操作共享一个窗口。
 
-The GUI is designed as a plain tool surface:
+- 顶部第一行用于设备库切换、画面大小、搜索和设备数量；第二行提供设备操作。窗口变窄时，次要动作进入「更多」。
+- 设备墙显示在线设备的预览。右侧的未启动与异常列表提供直接启动和管理入口；设备库显示全部设备的表格。
+- 右侧操作栏按「应用」「设备」「诊断」分组，常驻提供安装、卸载、输入、设主目标、重启、关闭和日志入口。
+- 工具面板显示实际操作范围；点击同一入口或「收起」可以关闭面板，并保留输入内容。
+- 底部显示工具状态、任务结果、主目标及勾选后的批量操作。
+- 日志可展开，记录中的 `INFO`、`DONE`、`ERROR` 分别表示信息、完成和错误。
 
-- The top area shows the current operation target and Android tool status.
-- The `工具` button shows dependency health and can run the bundled macOS
-  dependency installer.
-- The device wall fills the main area with physical devices, running emulators, and stopped AVDs. Its top toolbar contains all device management actions.
-- The right area provides fixed task buttons for installing APKs, sending text,
-  uninstalling apps, and device operations.
-- The bottom log area shows recent operation status with `INFO`, `DONE`, and
-  `ERROR` entries.
+「工具健康状态」显示各 SDK 工具与 scrcpy 的路径、来源和错误，可修复依赖并重新检查，无需源码目录。「复制检测结果」复制完整诊断信息。
 
-Use the `工具` panel as the runtime health center. It shows resolved paths for
-Android SDK tools and `scrcpy`, runs the bundled macOS dependency installer,
-and re-checks tool availability without requiring a source checkout.
+### 查找设备与调整画面
 
-### Control Center
+搜索支持设备名称或设备编号，搜索和状态筛选只影响显示，不改变已经勾选的设备。安装范围会说明有多少勾选设备被筛选隐藏。
 
-The main window contains the device wall. It shows every known physical device, running emulator, and stopped AVD in one place. There is no separate left control panel.
+「大小」即时切换三档预览尺寸并记住选择：
 
-The toolbar uses a single compact row for scanning, screenshot refresh, density, external windows, AVD creation, selection, main target, startup, shutdown and deletion. The `选择` menu groups selecting available devices, selecting stopped AVDs and clearing selection. `启动选中`, `关闭选中`, and `删除选中` use the card checkboxes for one or multiple AVDs. `设为主目标` requires exactly one available device. Deletion lists the selected AVDs and requires confirmation; physical devices are excluded. Logs can be expanded from the right rail.
+| 档位 | 预览宽 × 高 |
+| --- | --- |
+| 小 | `244 × 440` |
+| 标准 | `310 × 584` |
+| 高清 | `390 × 744` |
 
-The wall is for status and selection:
+这些数值控制工作台显示大小，不修改 Android 设备本身的分辨率。相同密度下，最大化增加网格列数，不自动放大画面；超出工作区时可滚动。
 
-- Running `state=device` targets show an ADB screenshot preview.
-- Stopped AVDs can be started from their card.
-- Each running target has an `独立窗` action. For an Android Emulator target it
-  focuses the native Emulator window; for a physical device it opens a scrcpy
-  control window.
-- The `独立窗` action opens a physical-device mirror above other windows. If it
-  gets in the way, minimize the window yourself. Native emulator windows do
-  not use this scrcpy window option.
-- The top `外部窗` action opens external windows for available targets in batch:
-  Android Emulator targets focus their native Emulator windows, and physical
-  devices open scrcpy control windows. If nothing is selected, 安卓设备矩阵 opens all
-  available targets.
-- Click the card title, such as `demo_5050`, to copy the AVD or device display
-  name. Click the compact status line below the preview to copy the active
-  device serial, such as `emulator-5554`; stopped AVDs copy the AVD name.
-- Screenshot preview clicks are a fallback helper; use the scrcpy mirror window
-  for real-time control, notification shade gestures, and detailed operation.
-- Right-click a device preview to send Android Back.
+「状态」菜单切换全部、在线、未启动、启动中和异常设备。设备库按名称、类型、状态和操作列展示全部设备，未启动的 AVD 可直接启动。
 
-Real-time mirroring requires a callable local `scrcpy` binary. 安卓设备矩阵 launches
-scrcpy with a per-device serial, a stable window title, no audio, UHID keyboard
-input, and a per-device log file. It uses a compact 624-point outer window height with a natural device aspect
-ratio for physical devices and resizes an existing scrcpy process for the same
-serial instead of opening a duplicate mirror. It does not use `--time-limit`.
+工具面板展开后，若未启动栏影响第二列预览，该栏折叠为带数量的展开入口；点击仍可管理和启动，空间充足时恢复列表。没有在线设备时，直接显示未启动列表。
 
-The `外部窗` action can focus native Android Emulator windows and open scrcpy
-windows for physical devices. Focusing or arranging native Emulator windows on
-macOS needs Accessibility permission because 安卓设备矩阵 controls another app's
-windows. When permission is missing, the app shows an authorization guide. Click `打开系统设置` to open System Settings > Privacy & Security > Accessibility and enable `安卓设备矩阵.app`. The `工具` panel also has an `辅助功能授权` entry. After enabling permission, return to the app and retry; restart the app if the permission is not yet recognized.
+### 设备卡片与操作范围
 
-### Install APK
+卡片标题显示设备名称、连接类型和勾选框，下方一行提供「主目标」「窗口」及返回、主页、通知图标。图标悬停时显示用途，也支持键盘操作。卡片「更多」提供管理设备、隐藏或显示画面、关闭设备、复制设备名称与编号。
 
-Use `Install APK` for a local `.apk` file or an `http://` / `https://` URL.
-Use `Install to multiple devices` when the same APK should be installed on more
-than one connected `state=device` target.
-When the input is empty, install actions reuse the last APK shown in the input
-placeholder.
+点击名称复制完整名称，点击预览下方的状态行复制设备编号。设备库中的名称和编号也可点击复制，显示截断不会影响复制内容。预览右键发送 Android 返回操作。截图交互是回退功能，低延迟控制、通知栏手势和精细操作优先使用外部镜像窗口。
 
-`Allow downgrade install` maps to `adb install -r -d`. Leave it unchecked for
-normal updates. Check it only when installing an APK whose `versionCode` is
-lower than the currently installed app. Without this option Android rejects the
-install with `INSTALL_FAILED_VERSION_DOWNGRADE`.
+隐藏预览会停止实时流，显示时重新连接。预览显示截图更新时间或实时状态，过期或断流时提供对应反馈。
 
-### Uninstall App
+主目标和勾选范围用途不同：
 
-The uninstall page is list-first:
+- 安装优先使用勾选设备，未勾选时使用主目标。
+- 卸载、输入、重启和单台关闭针对主目标。
+- 「设主目标」要求恰好勾选一台可用设备。
+- 批量启动、关闭和删除使用勾选范围，列出可执行设备及跳过原因；失败结果支持只重试失败项。
+- 顶部「选在线」勾选当前显示的在线设备，「清选」清空全部勾选，其他选择方式在「更多」中。
+- 「外部窗」在未勾选时使用全部可用在线设备；明确勾选但没有合格设备时只报告原因，不会扩大范围。
 
-1. Refresh the app list.
-2. Optionally filter the list by keyword.
-3. Choose the exact package from the list.
-4. Confirm uninstall.
+勾选设备后，底部显示启动、关闭、删除和清选入口。批量关闭只接受模拟器，真机关闭仍需单台精确编号确认。主目标变化后，旧设备的包列表会清空，重新加载后才能卸载。
 
-The filter text is never treated as the package name. This prevents accidental
-uninstall from partial text.
+### 实时镜像与外部窗口
 
-### Create Emulator
+真机的「窗口」打开 scrcpy 控制窗，模拟器的「窗口」聚焦原生模拟器窗口。启动中、离线或尚未连接 ADB 的运行模拟器仍保留聚焦和关闭入口，可通过正常关闭恢复。
 
-The create dialog shows phone and tablet templates only. TV, Wear OS,
-automotive, desktop, XR, glasses, and headset templates are filtered out.
-Device templates older than roughly three years are hidden. Newer Pixel
-templates are sorted before generic phone and tablet templates.
-安卓设备矩阵 only shows hardware profiles returned by `avdmanager list device`; it does
-not synthesize newer device names from older templates.
+scrcpy 需要在本机可调用。应用按设备编号启动镜像，使用稳定窗口标题、无音频、UHID 键盘输入及独立日志，不使用 `--time-limit`。真机镜像默认置顶，影响操作时可自行最小化；模拟器原生窗口不使用这个 scrcpy 置顶选项。
 
-Use `Batch Start` to start multiple stopped AVDs. Use `Batch Delete` to delete
-multiple AVDs. If a selected AVD is running or ADB offline, the GUI requires an
-extra force-close confirmation before it closes that emulator and deletes the
-AVD.
+「外部窗」批量打开并排列：
 
-Created and launched AVDs are prepared with hardware keyboard forwarding:
+- 从主屏幕左上角开始，左边距 6 点、上边距 42 点，不随管理窗口移动或缩放改变起点。
+- 默认统一外框高度 624 点，按真实画面比例计算宽度，保留 scrcpy 比例锁，不拉伸或裁切画面。
+- 按实际宽度紧凑排列，间距 6 点；空间不足时换行并统一缩小。
+- 同一设备的兼容镜像会复用；需要改变排列参数时，可重开本应用创建的旧镜像。
+- 个别设备开窗失败时，其余成功窗口仍继续排列并报告失败项。
+- 个别真机画面尺寸读取失败或无法识别时，只跳过该设备；其余正常设备继续打开，失败设备不占排列位置。
+- 排列后校验实际外框位置和尺寸，无法达到要求时报告错误。
+
+macOS 辅助功能权限用于控制其他应用窗口。没有权限时，应用通过重开自身的真机镜像，使用启动参数完成重排；镜像短暂断开，不会重启手机，也不会关闭其他程序创建的镜像。模拟器原生窗口的聚焦和排列仍需授权。
+
+需要授权时，点击「打开系统设置」，进入「隐私与安全性 → 辅助功能」，开启「安卓设备矩阵.app」。工具健康状态也有「辅助功能授权」入口。手动授权后点击「已开启，重新检查」，应用继续排列原目标；若新进程仍未获授权，请按指引重新添加应用并重启。
+
+外部窗口聚焦在 macOS 主线程执行焦点交接。独立 scrcpy 进程拒绝常规激活时，使用系统进程激活接口；进程尚未注册窗口时最多重试 2 秒。持续失败会保留系统错误码，并提示点击已打开窗口切换到前台。
+
+### 安装 APK
+
+在安装面板中输入本地 `.apk` 路径或 `http://` / `https://` 地址，也可点击「选择 APK」。输入为空时复用上次来源；「上次来源」显示完整路径或地址，「用上次 APK 安装」直接复用。
+
+普通安装遵循勾选优先、未勾选使用主目标的规则，提交前确认实际设备范围。需要手动选择多个已连接的 `state=device` 目标时，使用多设备安装入口。
+
+「允许降级安装」对应 `adb install -r -d`，用于安装 `versionCode` 更低的 APK，日常更新通常无需勾选。未允许降级时，Android 可能返回 `INSTALL_FAILED_VERSION_DOWNGRADE`。测试专用包会根据错误使用 `-t` 重试。
+
+签名冲突或被系统阻止的正式包降级会提供卸载重装或放弃选项。卸载会清除应用数据；批量处理只对受影响设备重试。
+
+### 卸载应用
+
+1. 刷新主目标设备的应用列表。
+2. 按需要输入关键词筛选。
+3. 从列表选择准确包名。
+4. 确认目标、包名和卸载选项后提交。
+
+关键词只用于筛选，不会直接作为包名执行卸载。列表默认筛选当前 Android 用户安装的非系统应用，根据安装原因、安装发起者、包来源和启动入口判断；来源未知时不会按厂商名称猜测，取消筛选可查看全部应用。
+
+「保留数据」使用 `adb shell pm uninstall -k`，可与「仅用户 0」组合。保留数据不能解决签名密钥冲突。Android 安装元数据由安装器报告，不能完整证明实际安装者。
+
+### 创建与管理模拟器
+
+创建对话框只展示手机和平板模板，过滤电视、手表、车载、桌面、XR、眼镜和头显。约三年前的旧模板会隐藏，较新的 Pixel 模板优先于通用模板。模板来自 `avdmanager list device`，应用不会将旧模板伪装成新型号。
+
+没有系统镜像时，可以选择下载推荐镜像；下载前需接受 Android SDK 许可，也可在 Android Studio SDK Manager 安装镜像后返回创建。
+
+批量启动使用勾选的未启动 AVD。批量删除会列出目标并要求确认；若目标正在运行或处于 ADB 离线状态，需要额外确认强制关闭后再删除。
+
+创建和启动 AVD 时会配置：
 
 - `hw.keyboard=yes`
 - `hw.keyboard.charmap=qwerty2`
 - `hw.keyboard.lid=yes`
-- emulator launch with `-use-keycode-forwarding`
-- emulator launch with `-change-locale zh-CN`
-- launch without loading old snapshots
-- wait for Android framework boot and then set `show_ime_with_hard_keyboard=1`
-- set the default emulator system locale to `zh-CN` after boot
-- if a Play Store image cannot apply the locale through emulator flags, use the
-  Settings language page to add Simplified Chinese (China) and move it to the
-  first language automatically
+- 使用 `-use-keycode-forwarding` 启动。
+- 使用 `-change-locale zh-CN` 启动，并跳过旧快照。
+- 等待 Android 框架启动后设置 `show_ime_with_hard_keyboard=1`。
+- 启动后设置默认系统语言为 `zh-CN`。
+- 若 Play Store 镜像无法通过启动参数应用语言，则进入系统语言设置，添加简体中文（中国）并自动移到首位。
 
-### Text Input
+硬件键盘及按键转发配置更改后，需要重启模拟器才能对当前实例生效。
 
-Simple ASCII text uses `adb shell input text`.
+### 文字输入
 
-Chinese or complex text uses ADB Keyboard. The GUI detects complex characters
-and can install ADB Keyboard on the current device.
+简单 ASCII 文字使用 `adb shell input text`。中文或复杂文字使用 ADB Keyboard，界面可检测复杂字符并在主目标设备安装该输入法。
 
-## CLI
+### 日志与提示复制
 
-Interactive mode:
+展开「日志」后可拖选文字，使用 ⌘A 全选、⌘C 复制，也可右键复制或点击「复制选中」。「复制全部」复制最近 200 行。
+
+日志只读。选择时暂停显示更新，后台继续收集；点击「跟随最新」恢复显示和滚动。展开日志只减少可用空间，不改变预览尺寸。
+
+错误、提示、操作确认、辅助功能说明和批量失败结果也支持拖选、全选、复制、右键复制及「复制全部」。长内容可滚动查看，复制时保留完整原文。
+
+## 命令行
+
+启动交互菜单：
 
 ```bash
 ./bin/adm
 ```
 
-List active devices:
+列出在线设备：
 
 ```bash
 ./bin/adm -l
 ```
 
-List active devices and stopped AVDs:
+列出在线设备与未启动的 AVD：
 
 ```bash
 ./bin/adm -al
 ```
 
-The CLI remembers the last selected current device when it is still available.
+交互模式会记住上次选中的可用设备。选择未启动 AVD 时，可先启动，等待设备可用后继续操作。
 
-## Safety
+## 操作确认与诊断
 
-Dangerous operations require stronger confirmation:
+删除 AVD 需要明确确认；真机关机要求输入准确设备编号，单台关闭或断开设备连接也保留对应确认流程。批量删除运行中的模拟器还需要额外确认强制关闭。
 
-- Deleting an AVD requires explicit confirmation.
-- Closing or disconnecting a device in the GUI requires typing the current
-  device serial.
-- Powering off a physical device requires typing the serial.
+应用优先复用已可调用的 SDK 工具。非标准安装位置可通过配置指定路径；依赖健康状态提供实际路径、来源和错误详情。
 
-The tool does not install duplicate Android SDK command tools. It detects
-callable tools first and lets the user set explicit paths when SDK tools are in
-non-standard locations.
+scrcpy 镜像本身不要求辅助功能权限；模拟器原生窗口的聚焦、排列及通过系统接口移动窗口需要授权。辅助功能检测不会在普通窗口操作中自动触发系统授权弹窗，失败原因会显示在界面或日志中。
 
-The control center depends on ADB and, for real-time mirrors, `scrcpy`. macOS
-Accessibility permission is not required for scrcpy mirroring; it only affects
-legacy external emulator window focus or tiling helpers.
+## 测试与验证
 
-## 桌面工作台（2026-10）
+```bash
+go test ./...
+go vet ./...
+```
 
-顶部操作保持单行，窗口变窄时次要操作收入「更多」。顶部搜索框搜索设备名称或 serial；顶部「大小」下拉即时切换小、标准、高清三档并记住选择；「状态」菜单直接切换状态筛选。设备墙显示在线预览，右侧显示未启动与异常设备，可直接启动；「设备库」切换到全部设备的表格。
+真实设备测试需要显式设置对应环境变量。只读安装记录检查使用 `ADM_LIVE_PACKAGE_SERIAL` 指定设备编号；`ADM_LIVE_EXPECTED_PACKAGE` 和兼容名称 `ADM_LIVE_PACKAGE_EXPECTED` 可指定必须存在的包，两者都设置时都检查。
 
-勾选表示批量范围，主目标表示卸载、输入、重启和关闭的单台目标。安装沿用勾选优先、未勾选时使用主目标的规则，面板明确显示实际范围及筛选隐藏数。批量启动、关闭及删除会列出可执行目标和跳过原因；失败结果可仅重试失败设备。主目标切换后会清空上一设备的包列表，重新加载后再卸载。
-
-「外部窗」统一窗口高度（默认624点），宽度按设备画面比例计算。保留 scrcpy 默认比例锁，避免强制等宽形成左右黑框，不拉伸或裁切画面；旧的本应用镜像会自动重开以应用新参数。未勾选时打开全部在线设备；明确勾选但没有合格设备时只显示原因，不会扩大范围。排列失败时使用「打开系统设置」进入辅助功能配置，手动授权后点击「已开启，重新检查」继续排列原窗口。若当前进程仍未获得权限，按引导重新添加应用并重启。
-
-创建模拟器时如无系统镜像，可选择下载推荐镜像。下载前需接受 Android SDK 许可，也可在 Android Studio SDK Manager 安装后返回创建。
-
-### 设备墙空间与日志复制
-
-在线预览按所选密度保持尺寸并从左上排列；最大化增加列数，不自动放大画面。「设备库」切换到所有设备的表格，名称、类型、状态和操作按列对齐。右侧操作栏常驻显示安装、卸载、输入、设主目标、重启、关闭和日志入口；点击一次即可打开工具，再次点击同一入口或「收起」关闭面板；状态集中在底部。展开日志后画面保持大小，网格可纵向滚动。
-
-展开「日志」后可拖动选择文字，使用 ⌘A 全选、⌘C 复制，也可右键复制或点击「复制选中」。点击「复制全部」复制最近 200 行。文本为只读；选择时暂停显示更新，后台继续收集日志，点击「跟随最新」恢复。
-
-错误、提示、操作确认、辅助功能说明和批量失败结果中的文本也支持拖选、⌘A / ⌘C、右键复制及「复制全部」。长内容可滚动查看，复制时保留完整原文。「工具健康状态」的「复制检测结果」会复制各工具的完整路径、来源和错误详情。
-
-
-### 原有功能与重构回归
-
-画面设置保留原有小 `300×584`、标准 `360×724`、高清 `440×920` 的预览尺寸，设置控制工作台显示大小，不修改 Android 设备本身的分辨率。最大化只改变列数，画面超过工作区时可滚动。点击在线卡片或设备库中的名称复制完整名称；设备卡片「更多」和管理窗口提供复制设备编号。设备库的编号也可点击复制，截断显示不影响复制内容。
-
-启动中、离线或尚未连接 ADB 的运行模拟器仍有聚焦窗口与关闭入口，允许通过正常关闭恢复，不需要删除设备。批量关机只接受模拟器，真机继续要求精确编号确认。批量外部窗遇到个别打开失败时，仍排列成功打开的窗口并报告失败项；调整后的实际窗口尺寸会校验，不能达到统一尺寸时报告错误。
-
-未取得 macOS 辅助功能权限时，「外部窗」会按当前选择顺序重开本应用的真机镜像，通过启动参数应用统一高度和不同位置，实现重新排列。重开期间镜像会短暂断开，不会重启手机。其他程序创建的镜像不会被关闭。模拟器原生窗口的重新排列仍需辅助功能授权。若系统开关已开启但应用仍提示未授权，退出应用，在系统设置中移除旧条目，再添加 `/Applications/安卓设备矩阵.app` 并开启。
-
-外部窗口排列统一从主屏幕左上角开始，左边距 6 点、上边距 42 点，不随管理窗口移动或缩放改变起点。权限回退排列也使用相同屏幕工作区域和 6 点间距，按各窗口实际宽度紧凑排列；空间不足时换行并统一缩小。窗口内容尺寸与 macOS 标题栏分别计算，排列后校验实际外框位置和尺寸。
-
-批量排列时，个别真机的画面尺寸读取失败或无法识别，只跳过该设备并报告原因；其他正常设备仍会打开并紧凑排列，失败设备不占用排列位置。
-
-外部窗口聚焦在 macOS 主线程执行应用间焦点交接；独立 scrcpy 进程拒绝常规应用激活时，使用系统进程激活接口兼容。新进程尚未注册窗口时最多重试 2 秒。持续失败会保留系统错误码，并提示手动点击已打开的窗口。
-
-### 高频操作与范围
-
-在线卡片直接提供主目标、管理、窗口、隐藏、返回、主页、通知、关闭；名称和编号可单击复制。隐藏预览会停止实时流，显示时重新连接。勾选设备后，底部显示直接启动、关闭、删除及清选入口；关闭和删除保留确认及结果列表。顶部「选在线」选择当前显示的在线设备，「清选」清空全部勾选，其他选择方式在更多中。
-
-工具面板打开后，若未启动栏影响第二列预览，该栏折叠为带数量的展开入口；一点击仍可管理和启动，空间充足时恢复列表。没有在线设备时直接显示未启动列表。
+使用通用示例值，实际设备编号和业务包名通过环境变量传入。单元测试覆盖设备状态、操作范围、布局、预览生命周期、窗口排列与错误恢复；真实设备操作和 macOS 跨进程窗口行为仍需按现场设备及权限验证。

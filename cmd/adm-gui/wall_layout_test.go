@@ -36,16 +36,17 @@ func TestPreviewGridAnchorsAtTopLeftAndUsesFixedDensity(t *testing.T) {
 	l := &adaptivePreviewLayout{g: g, viewport: fyne.NewSize(1200, 700)}
 	l.Layout(objects, fyne.NewSize(1200, 700))
 	firstSize := objects[0].Size()
-	if objects[0].Position() != fyne.NewPos(0, 0) || objects[1].Position().Y != 0 {
-		t.Fatal("grid is not anchored at top left")
+	origin := float32(0)
+	if objects[0].Position() != fyne.NewPos(origin, 0) || objects[1].Position().Y != 0 {
+		t.Fatal("device grid is not left aligned")
 	}
-	if objects[1].Position().X != firstSize.Width+16 {
+	if objects[1].Position().X != origin+firstSize.Width+16 {
 		t.Fatal("grid spacing changed")
 	}
 	l.viewport = fyne.NewSize(2400, 300)
 	l.Layout(objects, fyne.NewSize(2400, 300))
 	if objects[0].Size() != firstSize || objects[0].Position() != fyne.NewPos(0, 0) {
-		t.Fatal("maximizing or opening logs changes device dimensions")
+		t.Fatal("maximizing or opening logs changes density or group alignment")
 	}
 }
 

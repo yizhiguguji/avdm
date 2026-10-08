@@ -21,55 +21,72 @@ func visitCardObjects(object fyne.CanvasObject, visit func(fyne.CanvasObject)) {
 func cardButtons(object fyne.CanvasObject) map[string]*widget.Button {
 	buttons := map[string]*widget.Button{}
 	visitCardObjects(object, func(object fyne.CanvasObject) {
-		if button, ok := object.(*widget.Button); ok {
+		switch button := object.(type) {
+		case *widget.Button:
 			buttons[button.Text] = button
+		case *deviceIconButton:
+			buttons[button.actionName] = &button.Button
 		}
 	})
 	return buttons
 }
 
-func TestPreviewCardKeepsFrequentActionsDirectAndTwoRows(t *testing.T) {
+func TestPreviewCardKeepsCompactActionsAndCompleteMenu(t *testing.T) {
 	g := testWall(t)
 	entry := testWallEntry("one", "serial-one")
 	for _, density := range controlDensityOptions {
 		object := g.buildControlCard(entry, density)
 		buttons := cardButtons(object)
-		for _, label := range []string{"主目标", "管理", "窗口", "隐藏", "返回", "主页", "通知", "关闭"} {
+		for _, label := range []string{"主目标", "窗口", "返回", "主页", "通知", "更多"} {
 			if buttons[label] == nil || buttons[label].OnTapped == nil {
-				t.Fatalf("%s density has no direct action %q", density.label, label)
+				t.Fatalf("%s has no action %q", density.label, label)
 			}
 		}
-		if len(buttons) != 9 {
-			t.Fatalf("unexpected card button count %d", len(buttons))
+		if len(buttons) != 6 {
+			t.Fatalf("unexpected direct button count %d", len(buttons))
+		}
+		for _, label := range []string{"管理", "隐藏", "关闭"} {
+			if buttons[label] != nil {
+				t.Fatalf("%s still occupies card toolbar", label)
+			}
+		}
+		menu := g.deviceCardMenu(g.controlCards[entry.Key])
+		items := map[string]*fyne.MenuItem{}
+		for _, item := range menu.Items {
+			items[item.Label] = item
+		}
+		for _, label := range []string{"管理设备…", "隐藏画面", "关闭设备…", "复制设备名称", "复制设备编号"} {
+			if items[label] == nil || items[label].Action == nil {
+				t.Fatalf("missing menu action %q", label)
+			}
+		}
+		g.controlCards[entry.Key].hidden = true
+		if g.deviceCardMenu(g.controlCards[entry.Key]).Items[1].Label != "显示画面" {
+			t.Fatal("hidden preview cannot be restored from menu")
 		}
 		object.Resize(object.MinSize())
 		if object.MinSize().Width > density.cardSize.Width {
-			t.Fatalf("%s action rows expand card: width=%v expected <=%v", density.label, object.MinSize().Width, density.cardSize.Width)
+			t.Fatalf("card expanded: %v", object.MinSize())
 		}
 		if g.controlCards[entry.Key].preview.minSize != density.previewSize {
-			t.Fatal("adding actions changed preview dimensions")
+			t.Fatal("actions changed preview density")
 		}
 		var actions *fyne.Container
 		visitCardObjects(object, func(object fyne.CanvasObject) {
-			if group, ok := object.(*fyne.Container); ok && len(group.Objects) == 8 {
-				if _, ok := group.Objects[0].(*widget.Button); ok {
+			if group, ok := object.(*fyne.Container); ok {
+				if _, ok := group.Layout.(deviceActionRowLayout); ok {
 					actions = group
 				}
 			}
 		})
 		if actions == nil {
-			t.Fatal("missing compact action grid")
+			t.Fatal("missing compact action row")
 		}
-		actions.Resize(fyne.NewSize(density.cardSize.Width-16, actions.MinSize().Height))
-		rows := map[float32]bool{}
+		actions.Resize(fyne.NewSize(density.cardSize.Width-16, controlCardButtonRowsHeight))
 		for _, child := range actions.Objects {
-			rows[child.Position().Y] = true
-			if child.Position().X+child.Size().Width > actions.Size().Width+0.1 || child.Position().Y+child.Size().Height > actions.Size().Height+0.1 {
-				t.Fatal("action clipped outside rows")
+			if child.Position().Y != 0 || child.Position().X+child.Size().Width > actions.Size().Width+.1 {
+				t.Fatalf("action clips single row: %v %v", child.Position(), child.Size())
 			}
-		}
-		if len(rows) != 2 {
-			t.Fatalf("actions use %d rows", len(rows))
 		}
 	}
 }
@@ -101,12 +118,12 @@ func TestCardHideStopsStreamAndShowStartsFreshProbe(t *testing.T) {
 	oldGeneration := card.wall.generation
 	stops := 0
 	g.controlRealtimeStops[entry.Key] = func() { stops++ }
-	cardButtons(card.wall.object)["隐藏"].OnTapped()
+	g.deviceCardMenu(card).Items[1].Action()
 	if !card.hidden || card.realtime || stops != 1 || g.controlRealtimeStops[entry.Key] != nil || card.wall.generation <= oldGeneration {
 		t.Fatal("hide did not cancel and invalidate live stream")
 	}
-	if cardButtons(card.wall.object)["显示"] == nil {
-		t.Fatal("hide button did not change to show")
+	if g.deviceCardMenu(card).Items[1].Label != "显示画面" {
+		t.Fatal("hide menu did not change to show")
 	}
 	lateStops := 0
 	g.applyWallConnection(entry.Key, card, oldGeneration, nil, func() { lateStops++ }, nil)
@@ -120,7 +137,7 @@ func TestCardHideStopsStreamAndShowStartsFreshProbe(t *testing.T) {
 		return nil, nil, errors.New("fake probe")
 	}
 	g.wall.post = func(fn func()) { posted <- fn }
-	cardButtons(card.wall.object)["显示"].OnTapped()
+	g.deviceCardMenu(card).Items[1].Action()
 	select {
 	case <-connected:
 	case <-time.After(time.Second):
@@ -132,7 +149,47 @@ func TestCardHideStopsStreamAndShowStartsFreshProbe(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("probe result missing")
 	}
-	if card.hidden || !card.wall.probed || card.wall.connecting || cardButtons(card.wall.object)["隐藏"] == nil {
+	if card.hidden || !card.wall.probed || card.wall.connecting || g.deviceCardMenu(card).Items[1].Label != "隐藏画面" {
 		t.Fatal("show did not restore fresh probe state")
+	}
+}
+
+func TestCompactCardKeepsDeviceActionsAbovePreview(t *testing.T) {
+	g := testWall(t)
+	g.controlDensity = controlDensitySmall
+	entry := testWallEntry("one", "serial-one")
+	object := g.buildControlCard(entry, g.controlDensitySpec())
+	object.Resize(object.MinSize())
+	if object.MinSize().Height > 640 {
+		t.Fatalf("compact card exceeds normal viewport: %v", object.MinSize())
+	}
+	var previewY float32
+	actionBottom := map[string]float32{}
+	var walk func(fyne.CanvasObject, fyne.Position)
+	walk = func(object fyne.CanvasObject, origin fyne.Position) {
+		pos := origin.Add(object.Position())
+		if object == g.controlCards[entry.Key].wall.previewBox {
+			previewY = pos.Y
+		}
+		switch button := object.(type) {
+		case *widget.Button:
+			actionBottom[button.Text] = pos.Y + button.Size().Height
+		case *deviceIconButton:
+			actionBottom[button.actionName] = pos.Y + button.Size().Height
+		}
+		if group, ok := object.(*fyne.Container); ok {
+			for _, child := range group.Objects {
+				walk(child, pos)
+			}
+		}
+	}
+	walk(object, fyne.NewPos(0, 0))
+	if previewY > 68 {
+		t.Fatalf("card header wastes preview space: top %.0f", previewY)
+	}
+	for _, label := range []string{"主目标", "窗口", "返回", "主页", "通知"} {
+		if actionBottom[label] > previewY {
+			t.Fatalf("%s remains below preview: bottom %.0f preview %.0f", label, actionBottom[label], previewY)
+		}
 	}
 }

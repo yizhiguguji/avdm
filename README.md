@@ -1,180 +1,125 @@
 # 安卓设备矩阵
 
-Android device and virtual device management helper.
+安卓设备与 Android 虚拟设备（AVD）的本地管理工具，提供桌面工作台和命令行界面，共用设备管理后端。
 
-See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for detailed GUI and CLI usage.
+详细用法见[用户指南](docs/USER_GUIDE.md)，界面规范与历史交付记录见[设计文档](DESIGN.md)。
 
-## Build
+## 构建与安装
 
 ```bash
 make build
 ```
 
-This creates the command-line tool at `bin/adm` and the macOS desktop app at
-`dist/安卓设备矩阵.app`.
+构建后生成命令行工具 `bin/adm` 和 macOS 桌面应用 `dist/安卓设备矩阵.app`。
 
-For release-style local packaging, build the app and copy it into
-`/Applications`:
+将桌面应用安装到本机：
 
 ```bash
 make build
 cp -R dist/安卓设备矩阵.app /Applications/安卓设备矩阵.app
 ```
 
-## macOS Dependencies
+建议统一从 `/Applications/安卓设备矩阵.app` 启动，便于应用搜索和辅助功能权限管理。
 
-For a fresh macOS machine, install the runtime dependencies from the source
-checkout:
+## macOS 运行依赖
+
+在新电脑上，从源码目录执行：
 
 ```bash
 make deps-macos
 ```
 
-The dependency installer is idempotent. It uses Homebrew to install missing
-tools and then asks `sdkmanager` to install the Android SDK components 安卓设备矩阵
-needs:
+安装脚本可以重复运行，会通过 Homebrew 安装缺失工具，并调用 `sdkmanager` 安装所需的 Android SDK 组件：
 
-- `go` for local builds.
-- `android-commandlinetools` for `adb`, `emulator`, `avdmanager`, and
-  `sdkmanager`.
-- `scrcpy` for low-latency real-time device mirrors.
-- Android SDK `platform-tools`, `emulator`, `platforms;android-36`, and the
-  recommended ARM64 Play Store system image.
+- `go`：用于本地编译。
+- `android-commandlinetools`：提供 `adb`、`emulator`、`avdmanager`、`sdkmanager` 等工具。
+- `scrcpy`：用于低延迟的实时设备镜像。
+- Android SDK 的 `platform-tools`、`emulator`、`platforms;android-36`，以及推荐的 ARM64 Play Store 系统镜像。
 
-Homebrew itself is not installed automatically. Install Homebrew first from
-`https://brew.sh/`, then run `make deps-macos`.
+请先按 [Homebrew 官方说明](https://brew.sh/)安装 Homebrew，再执行 `make deps-macos`。
 
-The packaged macOS app also embeds the same installer at
-`安卓设备矩阵.app/Contents/Resources/install-macos-deps.sh`. In the GUI, open
-`工具` > `工具健康状态` and click `安装/修复依赖` to run it, then 安卓设备矩阵 will
-re-check the tool paths. This is the intended first-run path when distributing
-only `安卓设备矩阵.app`.
+打包后的应用也包含同一安装脚本，路径为 `安卓设备矩阵.app/Contents/Resources/install-macos-deps.sh`。在界面中打开「工具健康状态」，点击「安装/修复依赖」，完成后点击「重新检查」更新工具路径。
 
-## Usage
+工具查找会优先使用配置中的指定路径，再检查 `ANDROID_HOME`、`ANDROID_SDK_ROOT`、用户目录和 Homebrew 中的常见 Android SDK 位置，最后检查 `PATH`。已安装的 Android Studio 工具也可复用。
+
+## 分发与首次运行
+
+向其他用户分发 `dist/安卓设备矩阵.app` 即可。应用内置依赖修复脚本，首次运行不需要源码目录。只需要命令行功能时，也可单独分发 `bin/adm`。
+
+另一台 Mac 的首次运行步骤：
+
+1. 安装 Homebrew。
+2. 将 `安卓设备矩阵.app` 复制到 `/Applications`。
+3. 打开应用，通过底部「检查工具」进入工具健康状态。
+4. 若缺少工具，运行「安装/修复依赖」，结束后点击「重新检查」。
+5. 如需聚焦或排列模拟器原生窗口，在系统设置中授予辅助功能权限。
+
+应用不会自动安装 Homebrew 或请求 `sudo`。macOS 辅助功能权限需要用户在「系统设置 → 隐私与安全性 → 辅助功能」手动开启。
+
+正式分发时应保持稳定的代码签名身份。开发时的临时签名在替换应用后可能改变身份，导致系统仍显示旧应用已授权，而新进程无法使用权限。遇到这种情况，请移除旧辅助功能条目，重新添加 `/Applications/安卓设备矩阵.app`，开启权限并重启应用。
+
+## 使用方式
 
 ```bash
-./bin/adm        # interactive menu
-./bin/adm -l     # active devices
-./bin/adm -al    # active devices and stopped AVDs
+./bin/adm        # 交互菜单
+./bin/adm -l     # 列出在线设备
+./bin/adm -al    # 列出在线设备与未启动的 AVD
 ```
 
-Open `dist/安卓设备矩阵.app` for the desktop UI. Copy `安卓设备矩阵.app` into
-`/Applications` if you want it to appear in macOS application search.
+打开 `dist/安卓设备矩阵.app` 可使用桌面界面。
 
-When distributing 安卓设备矩阵 to another user, ship `dist/安卓设备矩阵.app`. The app contains
-the dependency installer and can run it from the `工具` panel, so users do not
-need the source checkout for first-run repair. Homebrew still has to exist on
-the target machine; 安卓设备矩阵 deliberately does not install Homebrew or request sudo.
-macOS Accessibility permission also has to be granted manually in System
-Settings because macOS does not allow apps to grant that permission silently.
-安卓设备矩阵 detects tools from `ANDROID_HOME`, `ANDROID_SDK_ROOT`, common Homebrew
-Android SDK paths, and `PATH`.
+桌面工作台采用深蓝渐变背景和分层面板，顶部将设备查找、画面设置与设备操作分成两行。设备墙显示在线预览，设备库显示全部设备；右侧操作栏按应用、设备和诊断分组，底部显示工具状态、任务结果与批量操作，日志可以展开和复制。
 
-First-run checklist for another Mac:
+交互命令行会记住上次选中的可用设备。选定主目标后，可安装或卸载应用、输入文字、管理输入法与语言、重启或关闭设备。设备列表包含真机、运行中的模拟器及未启动的 AVD；选择未启动的 AVD 后，可启动并等待设备可用，再进入对应操作。
 
-1. Install Homebrew if it is missing.
-2. Copy `安卓设备矩阵.app` into `/Applications`.
-3. Open 安卓设备矩阵, click `工具`, then run `安装/修复依赖` if any tool is missing.
-4. Click `重新检查` in the same panel after the installer finishes.
-5. Grant Accessibility permission only if external emulator window tiling is
-   needed.
+## 主要功能
 
-For reliable Accessibility permission across upgrades, distribute a consistently
-signed app. Local ad-hoc builds are fine for development, but replacing an
-ad-hoc-signed `.app` changes the code identity hash and macOS may keep showing
-the old `安卓设备矩阵.app` entry while the new binary is not trusted. In that case,
-remove the old Accessibility entry, add the new `/Applications/安卓设备矩阵.app`, and
-restart 安卓设备矩阵.
+- 列出在线安卓设备和未启动的 AVD，管理设备别名及主目标。
+- 创建、启动、关闭和删除 AVD，支持批量操作与失败项重试。
+- 从本地路径或 HTTP/HTTPS 地址安装 APK，记住上次安装来源。
+- 列出、筛选和卸载设备上的应用。
+- 打开系统语言设置，或尝试写入系统语言配置；结果受系统镜像限制。
+- 列出、启用和切换输入法，允许连接硬件键盘时显示软键盘。
+- 配置 AVD 硬件键盘、模拟器快捷键转发与按键转发。
+- 自动选择文字输入方式：简单 ASCII 使用 `adb shell input text`，中文或复杂文字使用 ADB Keyboard。
+- 重启主目标；关闭模拟器、断开 TCP 设备连接或关闭真机电源。
+- 在设备墙查看状态、截图或实时预览，并执行对应设备操作。
+- 打开低延迟 scrcpy 镜像窗口，支持聚焦与批量排列。
+- 查看工具路径、依赖诊断和可选择复制的操作日志。
 
-The GUI is intentionally plain. It keeps the same backend logic as the CLI and
-organizes the daily workflow around a device list, the current-device action
-panel, tool status, and operation logs.
+### APK 安装与卸载
 
-Interactive mode keeps a current device and remembers the last selected device
-when it is still available. With a current device selected, the main menu works
-as a current-device console for install, uninstall, text input, IME, language,
-reboot, and shutdown actions.
+APK 来源可以是本地路径或 `http://` / `https://` 地址。下载使用临时文件，安装结束后清理。安装会根据 `adb install` 的错误处理降级和测试包：确认后可使用 `-d` 重试降级，`testOnly` 包使用 `-t` 重试。
 
-Device and emulator lists include physical devices, running emulators, and
-stopped AVDs. Choosing a stopped AVD asks whether to start it, waits until it is
-usable, and then opens actions for that selected device.
+签名冲突或系统阻止正式包降级时，界面提供「卸载后重装」或放弃选项。卸载会清除应用数据，批量重试只针对受影响设备。保留数据卸载使用 `adb shell pm uninstall -k`，可与 `--user 0` 组合；保留数据不能解决签名密钥冲突。
 
-## Features
+卸载列表默认只显示当前 Android 用户安装的非系统应用。判断依据包括带启动入口的用户安装记录、本地或下载的 APK 来源，以及 ADB 安装发起者。没有启动入口的商店后台组件会被排除；ADB 和手动安装的 APK 不要求启动入口。来源不明的应用不会按厂商名称猜测，取消筛选可查看所有包。
 
-- List active Android devices and stopped AVDs.
-- Start, create, close, and delete AVDs.
-- Install APKs from local paths or HTTP/HTTPS URLs.
-- Uninstall packages from a selected device.
-- Manage language: open system language settings or try best-effort system locale writes without pretending they always apply.
-- List, enable, and select Android input methods.
-- Enable soft keyboard display when a hardware keyboard is connected.
-- Enable AVD physical keyboard input by setting hardware keyboard config, emulator shortcut forwarding, and keycode forwarding.
-- Send text with automatic mode selection: simple ASCII through `adb shell input text`, Chinese or complex text through ADB Keyboard.
-- Reboot the current device.
-- Close an emulator, disconnect a TCP device, or power off a physical device.
-- Manage aliases for device serials and AVD names.
-- Remember the last APK source for quick reinstall.
-- Open a control-center wall for device status, screenshot previews, and selected-device actions.
-- Open low-latency scrcpy mirror windows for real-time device control.
-- Show tool diagnostics for non-standard Android SDK installations.
-- Use a desktop GUI for common current-device workflows without walking through
-  nested numeric menus.
+这些元数据由安装器报告，不能完整证明是谁实际安装了应用。相关字段见 Android 官方的[安装原因](https://developer.android.com/reference/android/content/pm/PackageManager#INSTALL_REASON_USER)与[包来源](https://developer.android.com/reference/android/content/pm/PackageInstaller#PACKAGE_SOURCE_DOWNLOADED_FILE)说明。
 
-APK installation accepts either a local APK path or an `http://` / `https://`
-URL. URL downloads are streamed to a temporary file and removed after install.
-Install mode is detected from `adb install` failures: downgrade installs retry
-with `-d` after confirmation, and `testOnly` packages retry with `-t`.
-Signature conflicts and blocked release downgrades offer an explicit
-uninstall-and-reinstall or abandon choice in both GUI install entry points.
-Uninstalling clears app data; batch retries target only the affected devices.
-Keep-data uninstall uses `adb shell pm uninstall -k` and can be combined with
-`--user 0`. Keeping data cannot resolve a signing-key conflict.
+### 实时镜像与外部窗口
 
-Both GUI uninstall lists default to user-installed applications on the current
-Android user: non-system packages whose installation metadata identifies a user
-install with a launcher entry, local/downloaded APK, or ADB initiator.
-Store-delivered background components without a launcher entry are excluded;
-ADB and manually installed APKs do not require a launcher entry. Unknown installation origins
-are excluded instead of guessing from vendor names; unchecking the filter
-shows all packages. Android metadata is installer-reported, so it is not a
-complete audit of who physically installed an application. See Android's
-[installation reasons](https://developer.android.com/reference/android/content/pm/PackageManager#INSTALL_REASON_USER)
-and [package sources](https://developer.android.com/reference/android/content/pm/PackageInstaller#PACKAGE_SOURCE_DOWNLOADED_FILE).
+设备卡片的「窗口」对真机打开 scrcpy 镜像，对模拟器聚焦原生窗口。真机镜像默认置顶，可自行最小化；模拟器原生窗口不使用这个 scrcpy 选项。
 
-The `独立窗` action opens a physical-device mirror above other windows. If it
-gets in the way, minimize the window yourself. Emulator native windows do not
-use this scrcpy window option.
+批量「外部窗」从主屏幕左上角排列，左边距 6 点、上边距 42 点，默认统一外框高度 624 点，宽度按画面比例计算。空间不足时换行并缩小。没有勾选时使用全部可用在线设备；明确勾选后不会扩大操作范围。
 
-The tool reuses existing Android SDK tools when they are callable. It does not
-install duplicate `adb` tooling, and it avoids naming the binary `avdmanager`
-to prevent conflicts with the Android SDK command.
+没有辅助功能权限时，应用通过重开自身的真机镜像应用位置；镜像会短暂断开，手机不会重启，其他程序创建的镜像不会被关闭。单台尺寸查询失败只跳过该设备，其余设备继续排列。模拟器原生窗口的聚焦与排列仍需辅助功能权限。
 
-Real-time mirroring uses the local `scrcpy` command when available. The control
-center keeps ADB screenshots as a status preview, but detailed operation should
-use the scrcpy mirror window.
+### 键盘与操作确认
 
-External Android Emulator window tiling on macOS uses Accessibility automation.
-If the `外部窗` action cannot move or focus emulator windows, allow `安卓设备矩阵.app`
-in System Settings > Privacy & Security > Accessibility, then retry.
-安卓设备矩阵 checks this permission without triggering Apple's system prompt during
-window operations; failed checks are reported in the app log instead.
+硬件键盘及按键转发配置需要重启模拟器后生效。启动时启用按键转发并跳过旧快照，创建和启动 AVD 时同步写入硬件键盘配置。
 
-Physical keyboard and keycode-forwarding changes require restarting the running
-emulator process before they apply to that instance. 安卓设备矩阵 starts emulators with
-keycode forwarding and without loading old snapshots to avoid stale keyboard
-state. AVD creation and startup also write hardware keyboard config so new AVDs
-use the same behavior.
+删除 AVD、关闭或断开设备等操作需要确认；真机关机要求输入准确的设备编号。主目标和批量勾选分别提示范围，安装优先使用勾选设备，未勾选时使用主目标；卸载和输入始终针对主目标。
 
-Dangerous operations require stronger confirmation. Deleting an AVD requires
-typing the AVD name, and powering off a physical device requires typing the
-device serial.
+工具会复用可调用的 Android SDK 命令，命令行程序使用 `adm`，避免与 SDK 的 `avdmanager` 重名。
 
-## Tests
+## 测试
 
-Run `go test ./...` for the automated suite. Device integration tests are opt-in.
-For the read-only installed-package inventory check, set
-`ADM_LIVE_PACKAGE_SERIAL` to the target device serial. Optionally set
-`ADM_LIVE_EXPECTED_PACKAGE` or its compatible alias `ADM_LIVE_PACKAGE_EXPECTED`
-to a package that must be present. If both are set, both packages are checked.
-Keep actual device identifiers and business package names in environment
-variables rather than committed examples or fixtures.
+```bash
+go test ./...
+go vet ./...
+```
+
+真实设备集成测试需要显式启用。只读应用安装记录检查使用 `ADM_LIVE_PACKAGE_SERIAL` 指定设备编号；可选设置 `ADM_LIVE_EXPECTED_PACKAGE` 或兼容名称 `ADM_LIVE_PACKAGE_EXPECTED`，指定必须存在的应用包。两者都设置时会检查两个包。
+
+实际设备编号与业务包名应通过环境变量传入，不写入已提交的示例或测试数据。代码、文档、测试和资源中的项目标志约束见 [AGENTS.md](AGENTS.md)。
