@@ -29,8 +29,16 @@ type scrcpySession struct {
 	Starting    bool
 }
 
+type scrcpyWindowPlacement struct {
+	X, Y, Width, Height int
+}
+
 // startScrcpySession is called with scrcpyLaunchMu held by openLiveMirror.
-func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
+func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placements ...*scrcpyWindowPlacement) error {
+	var placement *scrcpyWindowPlacement
+	if len(placements) > 0 {
+		placement = placements[0]
+	}
 	serial = strings.TrimSpace(serial)
 	if serial == "" {
 		return fmt.Errorf("设备 serial 不能为空")
@@ -52,7 +60,7 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
 		select {
 		case <-existing.Done:
 		default:
-			if existing.AlwaysOnTop == alwaysOnTop && scrcpyCommandUniformGeometry(strings.Join(existing.Cmd.Args, " ")) {
+			if canReuseScrcpyWindow(strings.Join(existing.Cmd.Args, " "), alwaysOnTop, placement) {
 				return prepareScrcpyWindow(existing.Cmd.Process.Pid)
 			}
 			if err := existing.Cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
@@ -66,7 +74,7 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
 		}
 	}
 	if pid, command, ok := runningScrcpyProcessInfo(serial); ok {
-		if scrcpyCommandAlwaysOnTop(command) == alwaysOnTop && scrcpyCommandUniformGeometry(command) {
+		if canReuseScrcpyWindow(command, alwaysOnTop, placement) {
 			return prepareScrcpyWindow(pid)
 		}
 		if !strings.Contains(command, "--window-title=安卓设备矩阵 - ") {
@@ -98,12 +106,8 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
 	}
 	logPath := logFile.Name()
 	args := scrcpyArgs(serial, windowTitle, alwaysOnTop)
-	if nativeWindowAccessUnavailable() {
-		a.remoteMu.Lock()
-		slot := max(0, len(a.scrcpySessions)-1)
-		a.remoteMu.Unlock()
-		width, height, _ := MainDisplaySize()
-		args = append(args, scrcpyFallbackPositionArgs(slot, width, height)...)
+	if placement != nil {
+		args = scrcpyPlacementArgs(args, placement)
 	}
 	cmd := exec.Command(path, args...)
 	cmd.Stdout = logFile
@@ -139,8 +143,19 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool) error {
 		}
 		return fmt.Errorf("实时镜像启动后立即退出\n日志：%s%s", logPath, excerpt)
 	case <-time.After(700 * time.Millisecond):
+		if placement != nil {
+			if err := verifyScrcpyWindowPlacementNative(cmd.Process.Pid, placement); err != nil {
+				return fmt.Errorf("实时镜像已启动，但窗口排列未生效：%w", err)
+			}
+		}
 		return prepareScrcpyWindow(cmd.Process.Pid)
 	}
+}
+
+func canReuseScrcpyWindow(command string, alwaysOnTop bool, placement *scrcpyWindowPlacement) bool {
+	// Launch arguments cannot reveal whether the user moved the current window.
+	// A requested placement must recreate our mirror when AX movement is unavailable.
+	return placement == nil && scrcpyCommandAlwaysOnTop(command) == alwaysOnTop && scrcpyCommandUniformGeometry(command)
 }
 
 func (a *App) clearScrcpySession(serial string, session *scrcpySession) {
@@ -327,15 +342,13 @@ func scrcpyCommandUniformGeometry(command string) bool {
 
 // scrcpy can place its own new window without Accessibility permission.
 // Use separate slots while preserving the natural aspect ratio set above.
-func scrcpyFallbackPositionArgs(slot, screenWidth, screenHeight int) []string {
-	if screenWidth <= 0 {
-		screenWidth = 1440
+func scrcpyPlacementArgs(args []string, placement *scrcpyWindowPlacement) []string {
+	result := make([]string, 0, len(args)+2)
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "--window-height=") {
+			result = append(result, arg)
+		}
 	}
-	if screenHeight <= 0 {
-		screenHeight = 900
-	}
-	columns := max(1, (screenWidth-32)/360)
-	rows := max(1, (screenHeight-100)/scrcpyWindowHeight)
-	slot = max(0, slot) % (columns * rows)
-	return []string{fmt.Sprintf("--window-x=%d", 16+(slot%columns)*360), fmt.Sprintf("--window-y=%d", 60+(slot/columns)*scrcpyWindowHeight)}
+	// SDL positions the content; the measured macOS outer frame starts 32 points above it.
+	return append(result, fmt.Sprintf("--window-x=%d", placement.X), fmt.Sprintf("--window-y=%d", placement.Y+32), fmt.Sprintf("--window-height=%d", placement.Height-32))
 }

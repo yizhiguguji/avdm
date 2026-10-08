@@ -18,7 +18,7 @@ func (g *GUIApp) runExternalWindowAction(keys []string) {
 			g.pendingWindowArrangement = nil
 		}
 		if err == nil && !g.backend.GUIAccessibilityTrusted() {
-			g.appendLog("INFO", "外部窗口已打开。新镜像使用启动尺寸和位置；重新排列已有窗口需开启辅助功能权限。")
+			g.appendLog("INFO", "外部镜像已按顺序重排。辅助功能权限不可用，已通过重开镜像窗口应用位置。")
 		}
 	})
 }

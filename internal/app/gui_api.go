@@ -171,7 +171,7 @@ func (a *App) GUISetLiveMirrorAlwaysOnTop(entryKey string, enabled bool) error {
 	return a.openLiveMirror(entryKey, &enabled)
 }
 
-func (a *App) openLiveMirror(entryKey string, requestedTop *bool) error {
+func (a *App) openLiveMirror(entryKey string, requestedTop *bool, placements ...*scrcpyWindowPlacement) error {
 	a.scrcpyLaunchMu.Lock()
 	defer a.scrcpyLaunchMu.Unlock()
 	entry, ok, err := a.findDeviceEntryByKey(entryKey)
@@ -181,13 +181,16 @@ func (a *App) openLiveMirror(entryKey string, requestedTop *bool) error {
 	if !ok {
 		return fmt.Errorf("未找到设备：%s", entryKey)
 	}
-	return a.openLiveMirrorEntry(entry, requestedTop, focusEmulatorWindow)
+	return a.openLiveMirrorEntry(entry, requestedTop, focusEmulatorWindow, placements...)
 }
 
 // The normal open action focuses existing emulator windows regardless of ADB
 // readiness. An explicit window-level setting remains a phone-only operation.
-func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus func(string, string) error) error {
+func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus func(string, string) error, placements ...*scrcpyWindowPlacement) error {
 	if entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running {
+		if len(placements) > 0 && placements[0] != nil {
+			return &AccessibilityPermissionRequiredError{Operation: "排列模拟器原生窗口"}
+		}
 		if requestedTop != nil {
 			return fmt.Errorf("置顶开关目前支持真机独立窗")
 		}
@@ -214,7 +217,7 @@ func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus f
 	if requestedTop != nil {
 		alwaysOnTop = *requestedTop
 	}
-	if err := a.startScrcpySession(serial, title, alwaysOnTop); err != nil {
+	if err := a.startScrcpySession(serial, title, alwaysOnTop, placements...); err != nil {
 		return err
 	}
 	a.mu.Lock()
@@ -231,8 +234,21 @@ func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus f
 }
 
 func (a *App) GUIOpenLiveMirrors(entryKeys []string) error {
-	return openLiveMirrors(entryKeys, a.GUIOpenLiveMirror, func(keys []string) error {
-		if nativeWindowAccessUnavailable() {
+	withoutWindowAccess := nativeWindowAccessUnavailable()
+	open := a.GUIOpenLiveMirror
+	if withoutWindowAccess {
+		plan, err := a.planScrcpyFallbackNative(entryKeys)
+		if err != nil {
+			return err
+		}
+		open = func(key string) error {
+			return plan.open(key, func(key string, placement *scrcpyWindowPlacement) error {
+				return a.openLiveMirror(key, nil, placement)
+			})
+		}
+	}
+	return openLiveMirrors(entryKeys, open, func(keys []string) error {
+		if withoutWindowAccess {
 			return nil
 		}
 		return a.GUITileEmulatorWindows(keys, 0)

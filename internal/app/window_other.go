@@ -4,6 +4,14 @@ package app
 
 import "fmt"
 
+func (a *App) planScrcpyFallbackNative(keys []string) (*scrcpyFallbackPlan, error) {
+	return nil, fmt.Errorf("当前平台不支持镜像窗口排列回退")
+}
+
+func verifyScrcpyWindowPlacementNative(pid int, placement *scrcpyWindowPlacement) error {
+	return fmt.Errorf("当前平台不支持通过启动参数校验窗口排列")
+}
+
 func activateProcessNative(pid int) error {
 	return fmt.Errorf("激活外部窗口目前仅支持 macOS")
 }

@@ -5,8 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -191,15 +189,15 @@ func TestMirrorFallbackDoesNotHideRealActivationFailure(t *testing.T) {
 	}
 }
 
-func TestMirrorFallbackPositionsUseSeparateSlots(t *testing.T) {
-	first := scrcpyFallbackPositionArgs(0, 1440, 900)
-	second := scrcpyFallbackPositionArgs(1, 1440, 900)
-	if reflect.DeepEqual(first, second) || !slices.Contains(first, "--window-x=16") || !slices.Contains(second, "--window-x=376") {
-		t.Fatalf("new mirrors overlap: %v %v", first, second)
+func TestMirrorArrangementRecreatesEvenPreviouslyPositionedWindow(t *testing.T) {
+	command := "scrcpy " + strings.Join(scrcpyArgs("phone", "mirror", true), " ") + " --window-x=16 --window-y=60"
+	if !canReuseScrcpyWindow(command, true, nil) {
+		t.Fatal("ordinary focus must reuse a compatible mirror")
 	}
-	for _, dimension := range []int{0, 200} {
-		if got := scrcpyFallbackPositionArgs(100, dimension, dimension); len(got) != 2 {
-			t.Fatal("invalid fallback position")
-		}
+	if canReuseScrcpyWindow(command, true, &scrcpyWindowPlacement{X: 16, Y: 100, Width: 266, Height: 624}) {
+		t.Fatal("launch position does not prove the window has not been moved")
+	}
+	if canReuseScrcpyWindow(command, false, nil) {
+		t.Fatal("different top setting must recreate mirror")
 	}
 }

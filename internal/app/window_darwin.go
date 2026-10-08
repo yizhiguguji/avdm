@@ -14,12 +14,56 @@ package app
 #include <math.h>
 #include <objc/runtime.h>
 #include <objc/message.h>
+#include <dispatch/dispatch.h>
+#include <pthread.h>
+
+extern id NSApp;
+typedef struct { int pid; int activated; int status; } AdmActivation;
+
+static void adm_activate_process_on_main(void* context) {
+ AdmActivation* request = (AdmActivation*)context;
+ id pool = ((id (*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAutoreleasePool"), sel_registerName("new"));
+ id cls = (id)objc_getClass("NSRunningApplication");
+ id app = ((id (*)(id, SEL, int))objc_msgSend)(cls, sel_registerName("runningApplicationWithProcessIdentifier:"), request->pid);
+ if (app != NULL) {
+  if (((BOOL (*)(id, SEL))objc_msgSend)(app, sel_registerName("isActive"))) {
+   request->activated = 1;
+  } else {
+   SEL yield = sel_registerName("yieldActivationToApplication:");
+   if (NSApp != NULL && ((BOOL (*)(id, SEL, SEL))objc_msgSend)(NSApp, sel_registerName("respondsToSelector:"), yield)) {
+    ((void (*)(id, SEL, id))objc_msgSend)(NSApp, yield, app);
+   }
+   SEL activate = sel_registerName("activateFromApplication:options:");
+   if (((BOOL (*)(id, SEL, SEL))objc_msgSend)(app, sel_registerName("respondsToSelector:"), activate)) {
+    id current = ((id (*)(id, SEL))objc_msgSend)(cls, sel_registerName("currentApplication"));
+    request->activated = ((BOOL (*)(id, SEL, id, unsigned long))objc_msgSend)(app, activate, current, 1) != 0;
+   } else {
+    request->activated = ((BOOL (*)(id, SEL, unsigned long))objc_msgSend)(app, sel_registerName("activateWithOptions:"), 1) != 0;
+   }
+  }
+ }
+ if (!request->activated) {
+  // Standalone SDL executables may reject NSRunningApplication activation.
+  // Process Manager can still activate their user-created GUI process.
+  ProcessSerialNumber process;
+  request->status = GetProcessForPID(request->pid, &process);
+  if (request->status == noErr) {
+   request->status = SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly | kSetFrontProcessCausedByUser);
+   request->activated = request->status == noErr;
+  }
+ }
+ ((void (*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
+}
 
 static int adm_activate_process(int pid) {
- id cls = (id)objc_getClass("NSRunningApplication");
- id app = ((id (*)(id, SEL, int))objc_msgSend)(cls, sel_registerName("runningApplicationWithProcessIdentifier:"), pid);
- if (app == NULL) { return 0; }
- return ((BOOL (*)(id, SEL, unsigned long))objc_msgSend)(app, sel_registerName("activateWithOptions:"), 2) != 0;
+ AdmActivation request = {pid, 0, 0};
+ // GUI requests originate on workers. CLI processes have no AppKit run loop.
+ if (NSApp != NULL && !pthread_main_np()) {
+  dispatch_sync_f(dispatch_get_main_queue(), &request, adm_activate_process_on_main);
+ } else {
+  adm_activate_process_on_main(&request);
+ }
+ return request.activated ? 1 : request.status;
 }
 
 static char* adm_strdup(const char* value) {
@@ -262,66 +306,6 @@ static AXUIElementRef copy_toolbar_for_main_window(AXUIElementRef mainWindow) {
 	return toolbar;
 }
 
-static int copy_current_app_largest_window_frame(CGRect* frame) {
-	if (frame == NULL) {
-		return 0;
-	}
-	AXUIElementRef app = AXUIElementCreateApplication(getpid());
-	if (app == NULL) {
-		return 0;
-	}
-	CFTypeRef windowsValue = NULL;
-	if (AXUIElementCopyAttributeValue(app, kAXWindowsAttribute, &windowsValue) != kAXErrorSuccess || windowsValue == NULL) {
-		CFRelease(app);
-		return 0;
-	}
-	CFArrayRef windows = (CFArrayRef)windowsValue;
-	CFIndex count = CFArrayGetCount(windows);
-	double largestArea = 0.0;
-	int found = 0;
-	for (CFIndex i = 0; i < count; i++) {
-		AXUIElementRef win = (AXUIElementRef)CFArrayGetValueAtIndex(windows, i);
-		CGRect candidate = CGRectZero;
-		if (!copy_ax_window_frame(win, &candidate)) {
-			continue;
-		}
-		double area = (double)candidate.size.width * (double)candidate.size.height;
-		if (area > largestArea) {
-			*frame = candidate;
-			largestArea = area;
-			found = 1;
-		}
-	}
-	CFRelease(windowsValue);
-	CFRelease(app);
-	return found;
-}
-
-static CGRect adm_device_wall_work_area(CGRect bounds, CGRect appFrame, int cols) {
-	CGFloat margin = 6.0;
-	CGFloat leftInset = 16.0;
-	CGFloat rightInset = 16.0;
-	CGFloat topInset = 100.0;
-	CGFloat bottomInset = 56.0;
-	CGRect area = CGRectMake(
-		appFrame.origin.x + leftInset,
-		appFrame.origin.y + topInset,
-		appFrame.size.width - leftInset - rightInset,
-		appFrame.size.height - topInset - bottomInset
-	);
-	CGFloat minUsefulW = 288.0 * cols + margin * (cols - 1);
-	if (area.size.width >= minUsefulW && area.size.height >= 360.0) {
-		return area;
-	}
-	return CGRectMake(
-		bounds.origin.x + margin,
-		bounds.origin.y + 42.0,
-		bounds.size.width - margin * 2.0,
-		bounds.size.height - 42.0 - margin
-	);
-}
-
-
 static void activate_ax_window(AXUIElementRef win) {
 	if (win == NULL) {
 		return;
@@ -445,7 +429,32 @@ static CGSize adm_uniform_tile_size(double availableW, double availableH, int co
 }
 
 char* adm_ax_read_window_frame_for_pid(int pid, double* x, double* y, double* width, double* height) {
- if (!AXIsProcessTrusted()) {return adm_strdup("permission");}
+ if (!AXIsProcessTrusted()) {
+  // Reading public window bounds does not need AX permission. This also lets
+  // callers verify positions applied by scrcpy's own launch arguments.
+  CFArrayRef infos=CGWindowListCopyWindowInfo(kCGWindowListOptionAll,kCGNullWindowID);
+  if (infos==NULL) {return adm_strdup("frame-unavailable");}
+  CGRect best=CGRectZero;
+  int bestVisible=0;
+  for (CFIndex i=0;i<CFArrayGetCount(infos);i++) {
+   CFDictionaryRef info=(CFDictionaryRef)CFArrayGetValueAtIndex(infos,i);
+   CFNumberRef owner=(CFNumberRef)CFDictionaryGetValue(info,kCGWindowOwnerPID);
+   CFNumberRef layerValue=(CFNumberRef)CFDictionaryGetValue(info,kCGWindowLayer);
+   int ownerPID=0,layer=0;
+   if (owner==NULL || !CFNumberGetValue(owner,kCFNumberIntType,&ownerPID) || ownerPID!=pid) {continue;}
+   if (layerValue!=NULL) {CFNumberGetValue(layerValue,kCFNumberIntType,&layer);}
+   if (layer<0 || layer>100) {continue;}
+   CFBooleanRef visibleValue=(CFBooleanRef)CFDictionaryGetValue(info,kCGWindowIsOnscreen);
+   int visible=visibleValue!=NULL && CFBooleanGetValue(visibleValue);
+   CFDictionaryRef bounds=(CFDictionaryRef)CFDictionaryGetValue(info,kCGWindowBounds);
+   CGRect candidate=CGRectZero;
+   if (bounds!=NULL && CGRectMakeWithDictionaryRepresentation(bounds,&candidate) && candidate.size.height>30 && (visible>bestVisible || (visible==bestVisible && candidate.size.width*candidate.size.height>best.size.width*best.size.height))) {best=candidate;bestVisible=visible;}
+  }
+  CFRelease(infos);
+  if (best.size.width<=0) {return adm_strdup("not-found");}
+  *x=best.origin.x;*y=best.origin.y;*width=best.size.width;*height=best.size.height;
+  return adm_strdup("ok");
+ }
  AXUIElementRef win=copy_window_for_pid((pid_t)pid);
  if (win==NULL) {return adm_strdup("not-found");}
  CGRect frame=CGRectZero;
@@ -494,6 +503,26 @@ char* adm_ax_resize_window_for_pid(int pid, double width, double height) {
  return adm_strdup("ok");
 }
 
+// Keep the original screen fallback rectangle as the sole tiling origin.
+// Moving or resizing the management window must not move external mirrors.
+static CGRect adm_tile_work_area(CGRect bounds) {
+ return CGRectMake(bounds.origin.x+6.0,bounds.origin.y+42.0,bounds.size.width-12.0,bounds.size.height-48.0);
+}
+
+static int adm_tile_columns(CGFloat availableW, const CGFloat* widths, int count, int requestedCols) {
+ int cols=requestedCols;
+ if (cols<1) {
+  cols=1; CGFloat rowW=0;
+  for (int i=0;i<count;i++) {
+   CGFloat nextW=widths[i]+(i>0?6.0:0.0);
+   if (i>0 && rowW+nextW>availableW) {break;}
+   rowW+=nextW; cols=i+1;
+  }
+ }
+ if (cols<1) {cols=1;} if (cols>count) {cols=count;}
+ return cols;
+}
+
 static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requestedCols) {
 	if (matched < 1) {
 		return adm_strdup("not-found");
@@ -531,65 +560,15 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
   }
 	}
  if (maxNaturalWidth>0.0) {visibleWindowW=maxNaturalWidth;}
-	CGRect appFrame = CGRectZero;
-	CGRect workArea = CGRectMake(
-		bounds.origin.x + margin,
-		bounds.origin.y + 42.0,
-		bounds.size.width - margin * 2.0,
-		bounds.size.height - 42.0 - margin
-	);
-	if (copy_current_app_largest_window_frame(&appFrame)) {
-		CGRect deviceWallArea = adm_device_wall_work_area(bounds, appFrame, requestedCols > 0 ? requestedCols : matched);
-		CGFloat fullRowW = 0.0;
-		for (int i = 0; i < matched; i++) {
-			if (i > 0) {
-				fullRowW += horizontalGap;
-			}
-			fullRowW += visibleWindowW;
-			if (hasToolbar[i]) {
-				fullRowW += sideChromeW;
-			}
-		}
-		if (fullRowW <= deviceWallArea.size.width) {
-			workArea = deviceWallArea;
-		} else if (fullRowW <= bounds.size.width - margin * 2.0) {
-			workArea = CGRectMake(
-				bounds.origin.x + margin,
-				deviceWallArea.origin.y,
-				bounds.size.width - margin * 2.0,
-				deviceWallArea.size.height
-			);
-		} else {
-			workArea = deviceWallArea;
-		}
-	}
+ CGFloat* initialWidths=calloc((size_t)matched,sizeof(CGFloat));
+ CGFloat* initialToolbars=calloc((size_t)matched,sizeof(CGFloat));
+ if (!initialWidths || !initialToolbars) {free(initialWidths);free(initialToolbars);free(hasToolbar);for(int i=0;i<matched;i++){CFRelease(windows[i]);}return adm_strdup("alloc-failed");}
+ for(int i=0;i<matched;i++) {initialToolbars[i]=hasToolbar[i]?sideChromeW:0;initialWidths[i]=visibleWindowW+initialToolbars[i];}
+ CGRect workArea=adm_tile_work_area(bounds);
 
-	int cols = requestedCols;
-	if (cols < 1) {
-		cols = 1;
-		CGFloat rowW = 0.0;
-		for (int i = 0; i < matched; i++) {
-			CGFloat itemW = visibleWindowW;
-			if (hasToolbar[i]) {
-				itemW += sideChromeW;
-			}
-			CGFloat nextW = itemW;
-			if (i > 0) {
-				nextW += horizontalGap;
-			}
-			if (i > 0 && rowW + nextW > workArea.size.width) {
-				break;
-			}
-			rowW += nextW;
-			cols = i + 1;
-		}
-	}
-	if (cols < 1) {
-		cols = 1;
-	}
-	if (cols > matched) {
-		cols = matched;
-	}
+ int cols=adm_tile_columns(workArea.size.width,initialWidths,matched,requestedCols);
+ free(initialWidths);free(initialToolbars);
+
 	int rows = matched / cols;
 	if (matched % cols != 0) {
 		rows++;
@@ -680,28 +659,8 @@ static char* tile_ax_windows(AXUIElementRef* windows, int matched, int requested
 		rowNextX[row] = cellX + finalMainW + toolbarWidths[i] + horizontalGap;
 	}
 
-	int finalCols = cols;
-	if (requestedCols < 1) {
-		finalCols = 1;
-		CGFloat rowW = 0.0;
-		for (int i = 0; i < matched; i++) {
-			CGFloat nextW = itemWidths[i];
-			if (i > 0) {
-				nextW += horizontalGap;
-			}
-			if (i > 0 && rowW + nextW > workArea.size.width) {
-				break;
-			}
-			rowW += nextW;
-			finalCols = i + 1;
-		}
-	}
-	if (finalCols < 1) {
-		finalCols = 1;
-	}
-	if (finalCols > matched) {
-		finalCols = matched;
-	}
+ int finalCols=adm_tile_columns(workArea.size.width,itemWidths,matched,requestedCols);
+
 	int finalRows = matched / finalCols;
 	if (matched % finalCols != 0) {
 		finalRows++;
@@ -838,9 +797,11 @@ import "C"
 
 import (
 	"fmt"
+	"math"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -851,11 +812,66 @@ func MainDisplaySize() (int, int, bool) {
 	return width, height, width > 0 && height > 0
 }
 
-func activateProcessNative(pid int) error {
-	if C.adm_activate_process(C.int(pid)) == 0 {
-		return fmt.Errorf("无法激活外部窗口进程：%d", pid)
+func verifyScrcpyWindowPlacementNative(pid int, placement *scrcpyWindowPlacement) error {
+	x, y := placement.X, placement.Y
+	var frame ExternalWindowFrame
+	var err error
+	for attempt := 0; attempt < 30; attempt++ {
+		frame, err = ReadProcessWindowFrame(pid)
+		if err == nil && math.Abs(frame.X-float64(x)) <= 3 && math.Abs(frame.Y-float64(y)) <= 3 && math.Abs(frame.Width-float64(placement.Width)) <= 3 && math.Abs(frame.Height-float64(placement.Height)) <= 3 {
+			return nil
+		}
+		if attempt < 29 {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("期望内容位置 (%d,%d)，实际窗口位置 (%.0f,%.0f)、尺寸 %.0fx%.0f", x, y, frame.X, frame.Y, frame.Width, frame.Height)
+}
+
+func (a *App) planScrcpyFallbackNative(keys []string) (*scrcpyFallbackPlan, error) {
+	entries, err := a.allDeviceEntries()
+	if err != nil {
+		return nil, err
+	}
+	return planScrcpyFallback(keys, entries, a.readScrcpyFallbackFrame, func(frames []ExternalWindowFrame) []*scrcpyWindowPlacement {
+		bounds := C.CGDisplayBounds(C.CGMainDisplayID())
+		area := tileWorkAreaNative(ExternalWindowFrame{X: float64(bounds.origin.x), Y: float64(bounds.origin.y), Width: float64(bounds.size.width), Height: float64(bounds.size.height)})
+		return planMirrorWindowLayout(area, frames)
+	}), nil
+}
+
+func (a *App) readScrcpyFallbackFrame(entry DeviceEntry) (ExternalWindowFrame, error) {
+	frame := ExternalWindowFrame{}
+	if pid, ok := runningScrcpyProcess(entry.Active.Serial); ok {
+		frame, _ = ReadProcessWindowFrame(pid)
+	}
+	if frame.Height > 32 && frame.Width > 0 && !(frame.Width == 500 && frame.Height == 500) {
+		return frame, nil
+	}
+	out, err := a.runToolOutput(toolADB, 5*time.Second, "-s", entry.Active.Serial, "shell", "wm", "size")
+	if err != nil {
+		return ExternalWindowFrame{}, fmt.Errorf("读取设备画面尺寸失败：%w", err)
+	}
+	width, height := parseMirrorDisplaySize(out)
+	if width <= 0 || height <= 0 {
+		return ExternalWindowFrame{}, fmt.Errorf("无法识别设备画面尺寸：%s", entry.Label)
+	}
+	return ExternalWindowFrame{Width: float64(width) * 592 / float64(height), Height: 624}, nil
+}
+
+func activateProcessNative(pid int) error {
+	status := 0
+	err := activateProcessWithRetry(pid, func(pid int) bool {
+		status = int(C.adm_activate_process(C.int(pid)))
+		return status == 1
+	}, time.Sleep)
+	if err != nil && status != 0 {
+		return fmt.Errorf("%w（系统状态：%d）", err, status)
+	}
+	return err
 }
 
 func accessibilityTrustedNative() bool {
@@ -1077,9 +1093,7 @@ func commandLineHasAVD(fields []string, avdName string) bool {
 	return false
 }
 
-// ExternalWindowFrame is the actual AX outer frame in macOS display coordinates.
-type ExternalWindowFrame struct{ X, Y, Width, Height float64 }
-
+// ExternalWindowFrame is the actual outer frame in macOS display coordinates.
 func ReadProcessWindowFrame(pid int) (ExternalWindowFrame, error) {
 	var x, y, width, height C.double
 	result := C.adm_ax_read_window_frame_for_pid(C.int(pid), &x, &y, &width, &height)
@@ -1097,4 +1111,46 @@ func ReadProcessWindowFrame(pid int) (ExternalWindowFrame, error) {
 func uniformExternalTileSize(width, height float64, cols, rows int, auxiliaryWidth float64) (float64, float64) {
 	size := C.adm_uniform_tile_size(C.double(width), C.double(height), C.int(cols), C.int(rows), C.double(auxiliaryWidth), C.double(288))
 	return float64(size.width), float64(size.height)
+}
+
+// Reuse the original AX tiler's column selection and uniform sizing. Only the
+// execution differs: scrcpy launch arguments replace AX window mutations.
+func planMirrorWindowLayout(area ExternalWindowFrame, frames []ExternalWindowFrame) []*scrcpyWindowPlacement {
+	if len(frames) == 0 {
+		return nil
+	}
+	widths := make([]C.CGFloat, len(frames))
+	maxWidth := 0.0
+	for _, f := range frames {
+		maxWidth = math.Max(maxWidth, f.Width*594/(f.Height-32))
+	}
+	for i := range widths {
+		widths[i] = C.CGFloat(maxWidth)
+	}
+	cols := int(C.adm_tile_columns(C.double(area.Width), &widths[0], C.int(len(frames)), 0))
+	rows := (len(frames) + cols - 1) / cols
+	size := C.adm_uniform_tile_size(C.double(area.Width), C.double(area.Height), C.int(cols), C.int(rows), 0, C.double(maxWidth))
+	height := int(size.height)
+	for i, f := range frames {
+		widths[i] = C.CGFloat(math.Round(f.Width * float64(height-32) / (f.Height - 32)))
+	}
+	cols = int(C.adm_tile_columns(C.double(area.Width), &widths[0], C.int(len(frames)), 0))
+	placements := make([]*scrcpyWindowPlacement, len(frames))
+	x := int(math.Round(area.X))
+	for i := range frames {
+		if i%cols == 0 {
+			x = int(math.Round(area.X))
+		}
+		placements[i] = &scrcpyWindowPlacement{X: x, Y: int(math.Round(area.Y)) + (i/cols)*(height+6), Width: int(widths[i]), Height: height}
+		x += int(widths[i]) + 6
+	}
+	return placements
+}
+
+func tileWorkAreaNative(bounds ExternalWindowFrame) ExternalWindowFrame {
+	b := C.CGRect{}
+	b.origin.x, b.origin.y = C.double(bounds.X), C.double(bounds.Y)
+	b.size.width, b.size.height = C.double(bounds.Width), C.double(bounds.Height)
+	wall := C.adm_tile_work_area(b)
+	return ExternalWindowFrame{X: float64(wall.origin.x), Y: float64(wall.origin.y), Width: float64(wall.size.width), Height: float64(wall.size.height)}
 }
