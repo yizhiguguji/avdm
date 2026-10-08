@@ -168,3 +168,13 @@ use the same behavior.
 Dangerous operations require stronger confirmation. Deleting an AVD requires
 typing the AVD name, and powering off a physical device requires typing the
 device serial.
+
+## Tests
+
+Run `go test ./...` for the automated suite. Device integration tests are opt-in.
+For the read-only installed-package inventory check, set
+`ADM_LIVE_PACKAGE_SERIAL` to the target device serial. Optionally set
+`ADM_LIVE_EXPECTED_PACKAGE` or its compatible alias `ADM_LIVE_PACKAGE_EXPECTED`
+to a package that must be present. If both are set, both packages are checked.
+Keep actual device identifiers and business package names in environment
+variables rather than committed examples or fixtures.

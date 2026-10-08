@@ -10,7 +10,7 @@ import (
 func TestParseADBDevices(t *testing.T) {
 	input := `List of devices attached
 emulator-5554 device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a transport_id:1
-R5CN123ABC unauthorized usb:336592896X product:o1q model:SM_G9910 device:o1q
+PHONE-TEST-002 unauthorized usb:1-2 product:o1q model:SM_G9910 device:o1q
 `
 	got := parseADBDevices(input)
 	if len(got) != 2 {
@@ -19,7 +19,7 @@ R5CN123ABC unauthorized usb:336592896X product:o1q model:SM_G9910 device:o1q
 	if !got[0].IsEmulator || got[0].State != "device" || got[0].Details["model"] != "sdk_gphone64_arm64" {
 		t.Fatalf("unexpected first device: %+v", got[0])
 	}
-	if got[1].State != "unauthorized" || got[1].Serial != "R5CN123ABC" {
+	if got[1].State != "unauthorized" || got[1].Serial != "PHONE-TEST-002" {
 		t.Fatalf("unexpected second device: %+v", got[1])
 	}
 }
