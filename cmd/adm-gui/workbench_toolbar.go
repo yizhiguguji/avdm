@@ -240,16 +240,16 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	g.controlCards = map[string]*controlCardView{}
 	g.controlRealtimeStops = map[string]func(){}
 
-	scan := compactButton("扫描", func() { g.refreshAsync(false) })
+	scan := newReadableButton("扫描", func() { g.refreshAsync(false) })
 	scan.SetIcon(theme.ViewRefreshIcon())
-	frames := compactButton("刷新画面", g.refreshControlScreensAsync)
-	var view *widget.Button
-	view = compactButton("状态", func() { g.showWallStateMenu(view) })
-	external := compactButton("外部窗", g.openExternalDeviceWindows)
-	create := compactButton("创建", g.showCreateAVDDialog)
+	frames := newReadableButton("刷新画面", g.refreshControlScreensAsync)
+	var view *readableButton
+	view = newReadableButton("状态", func() { g.showWallStateMenu(view) })
+	external := newReadableButton("外部窗", g.openExternalDeviceWindows)
+	create := newReadableButton("创建", g.showCreateAVDDialog)
 	create.SetIcon(theme.ContentAddIcon())
-	clear := compactButton("清选", g.clearWorkbenchSelection)
-	selection := compactButton("选在线", func() { g.selectVisibleWallState(wallStateReady) })
+	clear := newReadableButton("清选", g.clearWorkbenchSelection)
+	selection := newReadableButton("选在线", func() { g.selectVisibleWallState(wallStateReady) })
 	selectionMenu := fyne.NewMenu("选择",
 		fyne.NewMenuItem("选中当前显示", g.selectVisibleWallEntries),
 		fyne.NewMenuItem("选中显示的在线设备", func() { g.selectVisibleWallState(wallStateReady) }),
@@ -261,14 +261,14 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		}),
 	)
 
-	more := compactButton("更多", nil)
+	more := newReadableButton("更多", nil)
 	more.SetIcon(theme.MenuDropDownIcon())
 	more.OnTapped = func() {
 		menu := fyne.NewMenu("更多")
 		// Responsive layout puts hidden frequent actions here, preserving a
 		// complete keyboard-accessible path at narrow workbench widths.
 		for _, item := range []struct {
-			button *widget.Button
+			button *readableButton
 			label  string
 		}{{frames, "刷新设备画面"}, {external, "打开外部窗口"}, {create, "创建模拟器"}, {selection, "选中显示的在线设备"}, {clear, "清空全部选择"}} {
 			if !item.button.Visible() {
@@ -284,9 +284,9 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 		)
 		g.showWorkbenchMenu(more, menu)
 	}
-	g.registerActionButtons(scan, frames, external, create, clear, selection, more)
+	g.registerActionButtons(&scan.Button, &frames.Button, &external.Button, &create.Button, &clear.Button, &selection.Button, &more.Button)
 
-	buttons := []*widget.Button{scan, frames, view, external, create, selection, clear, more}
+	buttons := []*readableButton{scan, frames, view, external, create, selection, clear, more}
 	objects := make([]fyne.CanvasObject, len(buttons))
 	for i, button := range buttons {
 		objects[i] = button
@@ -310,14 +310,14 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	return container.New(flexibleMinWidthLayout{width: deviceWallPanelMinWidth}, container.NewBorder(topSurface(container.New(workbenchRowInsetLayout{vertical: theme.Padding()}, row)), nil, nil, nil, container.NewPadded(workspace)))
 }
 
-func (g *GUIApp) showWorkbenchMenu(button *widget.Button, menu *fyne.Menu) {
+func (g *GUIApp) showWorkbenchMenu(button fyne.CanvasObject, menu *fyne.Menu) {
 	driver := g.app.Driver()
 	popup := widget.NewPopUpMenu(menu, driver.CanvasForObject(button))
 	position := driver.AbsolutePositionForObject(button)
 	popup.ShowAtPosition(position.Add(fyne.NewPos(0, button.Size().Height)))
 }
 
-func (g *GUIApp) showWallStateMenu(button *widget.Button) {
+func (g *GUIApp) showWallStateMenu(button *readableButton) {
 	menu := fyne.NewMenu("设备状态")
 	for _, state := range []string{wallStateAll, wallStateReady, wallStateStopped, wallStateStarting, wallStateError} {
 		value := state
@@ -440,6 +440,9 @@ func (workbenchToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 		return
 	}
 	widths := []float32{60, 84, 60, 74, 60, 64, 52, 78}
+	for i, object := range objects {
+		widths[i] = fyne.Max(widths[i], object.MinSize().Width)
+	}
 	gap := theme.Padding()
 	show := []bool{true, false, true, false, false, false, false, true}
 	used := widths[0] + widths[2] + widths[7] + 2*gap

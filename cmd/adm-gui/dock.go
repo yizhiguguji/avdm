@@ -12,7 +12,7 @@ import (
 // Dock geometry. All values are pixels, not ratios, so panes keep their size
 // when the window resizes; the center content absorbs the difference.
 const (
-	dockIconBarWidth    float32 = 64  // width of an always-visible edge icon bar
+	dockIconBarWidth    float32 = 72  // width of an always-visible edge icon bar
 	dockIconGap         float32 = 6   // gap between an icon bar and its neighbour
 	dockRailHeight      float32 = 36  // height of the collapsed bottom rail
 	dockHandleThickness float32 = 6   // draggable divider thickness
@@ -363,17 +363,16 @@ func (r *resizeHandleRenderer) Objects() []fyne.CanvasObject {
 	return r.objects
 }
 
-// Standard labeled buttons provide Fyne focus traversal and keyboard activation.
-// Text alone fits the narrow rail; the resource remains accepted for callers
-// that identify the corresponding action icon.
-func newWorkbenchRailButton(label string, resource fyne.Resource, onTap func()) *widget.Button {
-	button := widget.NewButton(label, onTap)
+// Regular-weight labeled buttons retain Fyne focus traversal and keyboard
+// activation, with enough rail width for both the icon and Chinese text.
+func newWorkbenchRailButton(label string, resource fyne.Resource, onTap func()) *readableButton {
+	button := newReadableButton(label, onTap)
 	button.Importance = widget.LowImportance
 	button.SetIcon(resource)
 	return button
 }
 
-func setWorkbenchToolActive(button *widget.Button, active bool) {
+func setWorkbenchToolActive(button *readableButton, active bool) {
 	if button == nil {
 		return
 	}

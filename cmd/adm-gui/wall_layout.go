@@ -220,7 +220,7 @@ func (g *GUIApp) buildWallWorkspace() fyne.CanvasObject {
 	g.wallLibraryGrid = container.NewVBox()
 	// Retained as a status model for callers; it is not an extra workspace row.
 	g.wallOnlineLabel = widget.NewLabelWithStyle("在线设备", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	g.wallLibraryButton = compactButton("设备库 (0)", func() {
+	g.wallLibraryButton = newReadableButton("设备库 (0)", func() {
 		g.wallLibraryMode = !g.wallLibraryMode
 		g.updateWallViewButton()
 		g.renderControlCenter()

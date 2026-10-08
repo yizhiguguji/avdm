@@ -177,7 +177,7 @@ type GUIApp struct {
 	wallStoppedGrid      *fyne.Container
 	wallStoppedPanel     fyne.CanvasObject
 	wallOnlineLabel      *widget.Label
-	wallLibraryButton    *widget.Button
+	wallLibraryButton    *readableButton
 	wallWorkspaceWidth   float32
 	wallOnlineCount      int
 	wallLibraryCount     int
@@ -221,10 +221,10 @@ type GUIApp struct {
 	// the single collapse/expand control per pane: highlighted when the pane
 	// is open, dimmed when collapsed. See standard buttons in dock.go.
 	rightIconBar  fyne.CanvasObject
-	logToolIcon   *widget.Button
-	installIcon   *widget.Button
-	uninstallIcon *widget.Button
-	messageIcon   *widget.Button
+	logToolIcon   *readableButton
+	installIcon   *readableButton
+	uninstallIcon *readableButton
+	messageIcon   *readableButton
 
 	// The right pane hosts three mutually-exclusive tool panels stacked in
 	// rightPanel; only the one named by rightActive is visible at a time.
@@ -469,7 +469,7 @@ func (g *GUIApp) buildRightIconBar() fyne.CanvasObject {
 	g.messageIcon = newWorkbenchRailButton("输入", theme.ContentPasteIcon(), func() { g.toggleRightPanel("message") })
 	reboot := newWorkbenchRailButton("重启", theme.ViewRefreshIcon(), g.rebootCurrentDevice)
 	close := newWorkbenchRailButton("关闭", theme.CancelIcon(), g.closeCurrentDevice)
-	g.prepareActionButton(reboot)
+	g.prepareActionButton(&reboot.Button)
 	g.logToolIcon = newWorkbenchRailButton("日志", theme.DocumentIcon(), func() {
 		g.logCollapsed = !g.logCollapsed
 		g.applyWorkbenchCollapseState()
@@ -480,7 +480,7 @@ func (g *GUIApp) buildRightIconBar() fyne.CanvasObject {
 
 func iconBarColumn(items ...fyne.CanvasObject) fyne.CanvasObject {
 	for i, item := range items {
-		if _, ok := item.(*widget.Button); ok {
+		if _, ok := item.(*readableButton); ok {
 			items[i] = container.NewGridWrap(fyne.NewSize(dockIconBarWidth, controlCompactControlHeight), item)
 		}
 	}

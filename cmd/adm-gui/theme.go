@@ -92,9 +92,9 @@ func (t admTheme) Size(name fyne.ThemeSizeName) float32 {
 	case theme.SizeNameInnerPadding:
 		return 5
 	case theme.SizeNameInlineIcon:
-		return 16
+		return 18
 	case theme.SizeNameText:
-		return 13
+		return 14
 	case theme.SizeNameInputRadius, theme.SizeNameSelectionRadius:
 		return 4
 	case theme.SizeNameSeparatorThickness:
