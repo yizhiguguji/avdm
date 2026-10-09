@@ -812,23 +812,8 @@ func MainDisplaySize() (int, int, bool) {
 	return width, height, width > 0 && height > 0
 }
 
-func verifyScrcpyWindowPlacementNative(pid int, placement *scrcpyWindowPlacement) error {
-	x, y := placement.X, placement.Y
-	var frame ExternalWindowFrame
-	var err error
-	for attempt := 0; attempt < 30; attempt++ {
-		frame, err = ReadProcessWindowFrame(pid)
-		if err == nil && math.Abs(frame.X-float64(x)) <= 3 && math.Abs(frame.Y-float64(y)) <= 3 && math.Abs(frame.Width-float64(placement.Width)) <= 3 && math.Abs(frame.Height-float64(placement.Height)) <= 3 {
-			return nil
-		}
-		if attempt < 29 {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-	if err != nil {
-		return err
-	}
-	return fmt.Errorf("期望内容位置 (%d,%d)，实际窗口位置 (%.0f,%.0f)、尺寸 %.0fx%.0f", x, y, frame.X, frame.Y, frame.Width, frame.Height)
+func verifyScrcpyWindowPlacementNative(pid int, placement *scrcpyWindowPlacement, done <-chan error) error {
+	return waitScrcpyWindowPlacement(placement, done, func() (ExternalWindowFrame, error) { return ReadProcessWindowFrame(pid) }, 15*time.Second, 100*time.Millisecond)
 }
 
 func (a *App) planScrcpyFallbackNative(keys []string) (*scrcpyFallbackPlan, error) {

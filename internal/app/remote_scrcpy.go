@@ -144,8 +144,12 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 		return fmt.Errorf("实时镜像启动后立即退出\n日志：%s%s", logPath, excerpt)
 	case <-time.After(700 * time.Millisecond):
 		if placement != nil {
-			if err := verifyScrcpyWindowPlacementNative(cmd.Process.Pid, placement); err != nil {
-				return fmt.Errorf("实时镜像已启动，但窗口排列未生效：%w", err)
+			if err := verifyScrcpyWindowPlacementNative(cmd.Process.Pid, placement, done); err != nil {
+				var exited *scrcpyStartupExitError
+				if errors.As(err, &exited) {
+					return fmt.Errorf("实时镜像启动期间退出：%w\n日志：%s%s", err, logPath, scrcpyLogExcerpt(logPath))
+				}
+				return fmt.Errorf("实时镜像窗口未就绪或排列未生效：%w\n日志：%s%s", err, logPath, scrcpyLogExcerpt(logPath))
 			}
 		}
 		return prepareScrcpyWindow(cmd.Process.Pid)
