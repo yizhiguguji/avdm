@@ -380,6 +380,9 @@ func (a *App) GUIDeviceScreenPNG(serial string) ([]byte, error) {
 	if serial == "" {
 		return nil, fmt.Errorf("设备 serial 不能为空")
 	}
+	if strings.HasPrefix(serial, "emulator-") && a.GUIHasLiveMirror(serial) {
+		return nil, fmt.Errorf("外部镜像运行中，已暂停内嵌截图")
+	}
 	out, err := a.runToolBytes(toolADB, 8*time.Second, "-s", serial, "exec-out", "screencap", "-p")
 	if err != nil {
 		return nil, err

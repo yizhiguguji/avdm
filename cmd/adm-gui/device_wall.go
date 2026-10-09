@@ -444,6 +444,12 @@ func (g *GUIApp) refreshControlCardAsync(key string, card *controlCardView, done
 		}
 		return
 	}
+	if g.pauseEmulatorSnapshotForMirror(card) {
+		if done != nil {
+			done()
+		}
+		return
+	}
 	card.refreshing = true
 	serial := card.serial
 	go func() {
@@ -500,6 +506,10 @@ func (g *GUIApp) updateWallCardFreshness(card *controlCardView, now time.Time) {
 	}
 	if card.hidden {
 		card.status.SetText("画面已隐藏")
+		return
+	}
+	if card.wall.mirrorPaused {
+		card.status.SetText("外部镜像运行中 · 内嵌截图已暂停")
 		return
 	}
 	if card.realtime {
@@ -672,4 +682,19 @@ func (g *GUIApp) deviceCardMenu(card *controlCardView) *fyne.Menu {
 		fyne.NewMenuItem("复制设备名称", func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) }),
 		fyne.NewMenuItem("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }),
 	)
+}
+
+func (g *GUIApp) pauseEmulatorSnapshotForMirror(card *controlCardView) bool {
+	w := g.ensureDeviceWall()
+	paused := card.wall != nil && card.entry.Active != nil && card.entry.Active.IsEmulator && w.mirrorActive != nil && w.mirrorActive(card.serial)
+	if card.wall != nil {
+		card.wall.mirrorPaused = paused
+	}
+	if paused {
+		card.status.SetText("外部镜像运行中 · 内嵌截图已暂停")
+		if card.wall.screenshotAt.IsZero() && card.wall.lastFrame.IsZero() {
+			card.preview.setMessage("外部镜像运行中")
+		}
+	}
+	return paused
 }

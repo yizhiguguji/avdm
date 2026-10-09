@@ -182,6 +182,10 @@ func scrcpyArgs(serial, windowTitle string, alwaysOnTop bool) []string {
 		"--keep-active",
 		"--stay-awake",
 	}
+	if strings.HasPrefix(serial, "emulator-") {
+		// Avoid reverse-tunnel traffic on the emulator's host transport.
+		args = append(args, "--force-adb-forward")
+	}
 	if alwaysOnTop {
 		args = append(args, "--always-on-top")
 	}
@@ -354,4 +358,31 @@ func scrcpyPlacementArgs(args []string, placement *scrcpyWindowPlacement) []stri
 	}
 	// SDL positions the content; the measured macOS outer frame starts 32 points above it.
 	return append(result, fmt.Sprintf("--window-x=%d", placement.X), fmt.Sprintf("--window-y=%d", placement.Y+32), fmt.Sprintf("--window-height=%d", placement.Height-32))
+}
+
+// GUIHasLiveMirror also covers startup, so the wall does not open competing
+// ADB screenshot requests while an emulator mirror is connecting.
+func (a *App) GUIHasLiveMirror(serial string) bool {
+	a.remoteMu.Lock()
+	session := a.scrcpySessions[serial]
+	if session == nil {
+		a.remoteMu.Unlock()
+		if !strings.HasPrefix(serial, "emulator-") {
+			return false
+		}
+		// Mirrors outlive a GUI restart; recognise only our own window title.
+		_, command, ok := runningScrcpyProcessInfo(serial)
+		return ok && strings.Contains(command, "--window-title=安卓设备矩阵 - ")
+	}
+	starting, done := session.Starting, session.Done
+	a.remoteMu.Unlock()
+	if starting {
+		return true
+	}
+	select {
+	case <-done:
+		return false
+	default:
+		return true
+	}
 }
