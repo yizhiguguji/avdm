@@ -8,7 +8,7 @@ func (a *App) planScrcpyFallbackNative(keys []string) (*scrcpyFallbackPlan, erro
 	return nil, fmt.Errorf("当前平台不支持镜像窗口排列回退")
 }
 
-func verifyScrcpyWindowPlacementNative(pid int, placement *scrcpyWindowPlacement) error {
+func verifyScrcpyWindowPlacementNative(pid int, placement *scrcpyWindowPlacement, done <-chan error) error {
 	return fmt.Errorf("当前平台不支持通过启动参数校验窗口排列")
 }
 

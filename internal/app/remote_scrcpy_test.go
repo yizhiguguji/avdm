@@ -201,3 +201,29 @@ func TestMirrorArrangementRecreatesEvenPreviouslyPositionedWindow(t *testing.T) 
 		t.Fatal("different top setting must recreate mirror")
 	}
 }
+
+func TestEmulatorMirrorUsesForwardTunnelWithoutChangingPhones(t *testing.T) {
+	for _, serial := range []string{"emulator-5554", "PHONE-TEST-001"} {
+		args := scrcpyArgs(serial, "mirror", false)
+		if scrcpyArgsContain(args, "--force-adb-forward") != strings.HasPrefix(serial, "emulator-") {
+			t.Fatalf("wrong tunnel for %s: %v", serial, args)
+		}
+	}
+}
+
+func TestLiveEmulatorMirrorGuardsQueuedSnapshotRequests(t *testing.T) {
+	done := make(chan struct{})
+	a := &App{scrcpySessions: map[string]*scrcpySession{"emulator-test": {Starting: true, Done: done}}}
+	if !a.GUIHasLiveMirror("emulator-test") {
+		t.Fatal("startup not recognized")
+	}
+	// No tool resolver is installed: the guard must return before invoking ADB.
+	if _, err := a.GUIDeviceScreenPNG("emulator-test"); err == nil || !strings.Contains(err.Error(), "暂停") {
+		t.Fatalf("queued capture reached ADB: %v", err)
+	}
+	a.scrcpySessions["emulator-test"].Starting = false
+	close(done)
+	if a.GUIHasLiveMirror("emulator-test") {
+		t.Fatal("closed mirror keeps snapshots paused")
+	}
+}

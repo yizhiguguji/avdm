@@ -13,14 +13,15 @@ import (
 // wallState owns preview work for the lifetime of the main window. Mutable
 // view state is only accessed on the Fyne thread; workers use done/closed.
 type wallState struct {
-	closed      atomic.Bool
-	done        chan struct{}
-	once        sync.Once
-	screenshots chan struct{}
-	connections chan struct{}
-	screenshot  func(string) ([]byte, error)
-	connect     func(core.DeviceEntry) (<-chan core.GUIEmulatorRealtimeFrame, func(), error)
-	post        func(func())
+	closed       atomic.Bool
+	done         chan struct{}
+	once         sync.Once
+	screenshots  chan struct{}
+	connections  chan struct{}
+	screenshot   func(string) ([]byte, error)
+	mirrorActive func(string) bool
+	connect      func(core.DeviceEntry) (<-chan core.GUIEmulatorRealtimeFrame, func(), error)
+	post         func(func())
 }
 
 type wallCardState struct {
@@ -35,6 +36,7 @@ type wallCardState struct {
 	lastFrame          time.Time
 	screenshotAt       time.Time
 	disconnected       bool
+	mirrorPaused       bool
 	generation         uint64
 	connectedAt        time.Time
 	frameUpdatePending atomic.Bool
@@ -47,6 +49,7 @@ func (g *GUIApp) ensureDeviceWall() *wallState {
 	w := &wallState{done: make(chan struct{}), screenshots: make(chan struct{}, 3), connections: make(chan struct{}, 2), post: fyne.Do}
 	if g.backend != nil {
 		w.screenshot = g.backend.GUIDeviceScreenPNG
+		w.mirrorActive = g.backend.GUIHasLiveMirror
 		w.connect = func(entry core.DeviceEntry) (<-chan core.GUIEmulatorRealtimeFrame, func(), error) {
 			return g.backend.GUIStreamEmulatorRealtimeForEntry(entry, 0, 0)
 		}

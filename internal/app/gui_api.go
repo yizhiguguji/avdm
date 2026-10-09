@@ -207,12 +207,7 @@ func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus f
 	if entry.Active.State != "device" {
 		return fmt.Errorf("该设备当前不可实时控制：%s | %s", entry.Label, entry.Active.State)
 	}
-	title := entry.Label
-	if entry.AVD != nil && strings.TrimSpace(entry.AVD.Name) != "" {
-		title = entry.AVD.Name
-	} else if strings.TrimSpace(entry.Active.AVDName) != "" {
-		title = entry.Active.AVDName
-	}
+	title := a.liveMirrorTitle(entry)
 	serial := entry.Active.Serial
 	alwaysOnTop := true
 	if requestedTop != nil {
@@ -379,6 +374,9 @@ func (a *App) GUIDeviceScreenPNG(serial string) ([]byte, error) {
 	serial = strings.TrimSpace(serial)
 	if serial == "" {
 		return nil, fmt.Errorf("设备 serial 不能为空")
+	}
+	if strings.HasPrefix(serial, "emulator-") && a.GUIHasLiveMirror(serial) {
+		return nil, fmt.Errorf("外部镜像运行中，已暂停内嵌截图")
 	}
 	out, err := a.runToolBytes(toolADB, 8*time.Second, "-s", serial, "exec-out", "screencap", "-p")
 	if err != nil {

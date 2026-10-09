@@ -193,3 +193,36 @@ func TestCompactCardKeepsDeviceActionsAbovePreview(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalEmulatorMirrorPausesAndRestoresWallSnapshots(t *testing.T) {
+	g := testWall(t)
+	entry := testWallEntry("one", "emulator-test")
+	entry.Active.IsEmulator = true
+	g.buildControlCard(entry, g.controlDensitySpec())
+	card := g.controlCards[entry.Key]
+	active := true
+	w := g.ensureDeviceWall()
+	w.mirrorActive = func(string) bool { return active }
+	requested := make(chan struct{}, 1)
+	w.screenshot = func(string) ([]byte, error) { requested <- struct{}{}; return nil, errors.New("test screenshot") }
+	completed := false
+	g.refreshControlCardAsync(entry.Key, card, func() { completed = true })
+	if !completed || card.refreshing || !card.wall.mirrorPaused {
+		t.Fatal("external mirror did not suspend snapshot requests")
+	}
+	select {
+	case <-requested:
+		t.Fatal("competing ADB screenshot requested")
+	default:
+	}
+	active = false
+	g.refreshControlCardAsync(entry.Key, card, nil)
+	select {
+	case <-requested:
+	case <-time.After(time.Second):
+		t.Fatal("snapshots did not resume after mirror closed")
+	}
+	if card.wall.mirrorPaused {
+		t.Fatal("paused indicator not cleared")
+	}
+}

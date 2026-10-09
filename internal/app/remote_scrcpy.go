@@ -19,14 +19,20 @@ const (
 )
 
 type scrcpySession struct {
-	AlwaysOnTop bool
-	Done        chan struct{}
-	Serial      string
-	Title       string
-	Cmd         *exec.Cmd
-	LogPath     string
-	StartedAt   time.Time
-	Starting    bool
+	AlwaysOnTop      bool
+	Done             chan struct{}
+	Serial           string
+	Title            string
+	Cmd              *exec.Cmd
+	LogPath          string
+	StartedAt        time.Time
+	Starting         bool
+	Opened           bool
+	OpenedAt         time.Time
+	Stopped          bool
+	Recovering       bool
+	RecoveryAttempts int
+	Placement        *scrcpyWindowPlacement
 }
 
 type scrcpyWindowPlacement struct {
@@ -34,7 +40,11 @@ type scrcpyWindowPlacement struct {
 }
 
 // startScrcpySession is called with scrcpyLaunchMu held by openLiveMirror.
-func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placements ...*scrcpyWindowPlacement) error {
+func (a *App) startScrcpySessionOnce(serial, title string, alwaysOnTop bool, placements ...*scrcpyWindowPlacement) error {
+	return a.startScrcpySessionWithRecovery(serial, title, alwaysOnTop, 0, placements...)
+}
+
+func (a *App) startScrcpySessionWithRecovery(serial, title string, alwaysOnTop bool, recoveryAttempts int, placements ...*scrcpyWindowPlacement) error {
 	var placement *scrcpyWindowPlacement
 	if len(placements) > 0 {
 		placement = placements[0]
@@ -51,7 +61,7 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 	if err != nil {
 		return err
 	}
-	windowTitle := fmt.Sprintf("安卓设备矩阵 - %s | %s", title, serial)
+	windowTitle := title
 
 	a.remoteMu.Lock()
 	existing := a.scrcpySessions[serial]
@@ -60,37 +70,37 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 		select {
 		case <-existing.Done:
 		default:
-			if canReuseScrcpyWindow(strings.Join(existing.Cmd.Args, " "), alwaysOnTop, placement) {
+			if slices.Contains(existing.Cmd.Args, "--window-title="+windowTitle) && canReuseScrcpyWindow(strings.Join(existing.Cmd.Args, " "), alwaysOnTop, placement) {
 				return prepareScrcpyWindow(existing.Cmd.Process.Pid)
 			}
-			if err := existing.Cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
-				return fmt.Errorf("关闭旧独立窗失败：%w", err)
-			}
-			select {
-			case <-existing.Done:
-			case <-time.After(3 * time.Second):
-				return fmt.Errorf("旧独立窗未退出，请关闭后重试")
+			a.remoteMu.Lock()
+			existing.Stopped = true
+			a.remoteMu.Unlock()
+			if err := stopManagedScrcpyProcess(existing.Cmd.Process, existing.Done, 3*time.Second); err != nil {
+				return err
 			}
 		}
 	}
 	if pid, command, ok := runningScrcpyProcessInfo(serial); ok {
-		if canReuseScrcpyWindow(command, alwaysOnTop, placement) {
-			return prepareScrcpyWindow(pid)
-		}
-		if !strings.Contains(command, "--window-title=安卓设备矩阵 - ") {
+		if !appOwnedScrcpyProcess(pid, command) {
 			return fmt.Errorf("该设备已有其他程序打开的镜像，请先关闭该窗口，再应用窗口尺寸或置顶设置")
+		}
+		if strings.Contains(command, "--window-title="+windowTitle+" --") && canReuseScrcpyWindow(command, alwaysOnTop, placement) {
+			return prepareScrcpyWindow(pid)
 		}
 		if err := stopPreviousScrcpyWindow(pid); err != nil {
 			return err
 		}
 	}
 	session := &scrcpySession{
-		AlwaysOnTop: alwaysOnTop,
-		Done:        make(chan struct{}),
-		Serial:      serial,
-		Title:       title,
-		StartedAt:   time.Now(),
-		Starting:    true,
+		AlwaysOnTop:      alwaysOnTop,
+		Done:             make(chan struct{}),
+		Serial:           serial,
+		Title:            title,
+		StartedAt:        time.Now(),
+		Starting:         true,
+		RecoveryAttempts: recoveryAttempts,
+		Placement:        placement,
 	}
 	a.remoteMu.Lock()
 	if a.scrcpySessions == nil {
@@ -105,6 +115,7 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 		return err
 	}
 	logPath := logFile.Name()
+	_, _ = logFile.WriteString("\n--- mirror session ---\n")
 	args := scrcpyArgs(serial, windowTitle, alwaysOnTop)
 	if placement != nil {
 		args = scrcpyPlacementArgs(args, placement)
@@ -118,6 +129,18 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 		return fmt.Errorf("启动实时镜像失败：%w\n日志：%s", err, logPath)
 	}
 
+	ownerDir, ownerErr := configDir()
+	if ownerErr == nil {
+		ownerErr = registerScrcpyOwner(ownerDir, cmd.Process.Pid)
+	}
+	if ownerErr != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = logFile.Close()
+		a.clearScrcpySession(serial, session)
+		return fmt.Errorf("记录镜像窗口归属失败：%w", ownerErr)
+	}
+
 	a.remoteMu.Lock()
 	if current := a.scrcpySessions[serial]; current == session {
 		session.Cmd = cmd
@@ -129,26 +152,58 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 	done := make(chan error, 1)
 	go func() {
 		err := cmd.Wait()
+		_ = os.Remove(mirrorOwnerPath(ownerDir, cmd.Process.Pid))
 		_ = logFile.Close()
-		a.clearScrcpySession(serial, session)
+		a.remoteMu.Lock()
+		session.RecoveryAttempts = consecutiveMirrorRecoveryAttempts(session.RecoveryAttempts, session.OpenedAt, time.Now())
+		runtimeFailure := a.scrcpySessions[serial] == session && session.Opened && !session.Stopped && err != nil
+		recoverWindow := strings.HasPrefix(serial, "emulator-") && a.scrcpySessions[serial] == session && recoverDisconnectedMirror(err, session.Opened, session.Stopped, session.RecoveryAttempts)
+		if recoverWindow {
+			session.Recovering = true
+		} else if a.scrcpySessions[serial] == session {
+			delete(a.scrcpySessions, serial)
+		}
+		a.remoteMu.Unlock()
 		close(session.Done)
 		done <- err
+		if recoverWindow {
+			a.recordMirrorEvent("WARN", fmt.Sprintf("%s：ADB 连接断开，准备恢复镜像（连续重试 %d/3）", session.Title, session.RecoveryAttempts+1))
+			go a.recoverDisconnectedSession(session)
+		} else if runtimeFailure {
+			a.recordMirrorEvent("ERROR", fmt.Sprintf("%s：实时镜像已退出，连续失败达到上限或退出原因不支持恢复：%v\n日志：%s%s", session.Title, err, logPath, scrcpyLogExcerpt(logPath)))
+		}
 	}()
 
 	select {
 	case err := <-done:
 		excerpt := scrcpyLogExcerpt(logPath)
 		if err != nil {
-			return fmt.Errorf("实时镜像启动后退出：%w\n日志：%s%s", err, logPath, excerpt)
+			return fmt.Errorf("实时镜像启动后退出：%w\n日志：%s%s", &scrcpyStartupExitError{cause: err}, logPath, excerpt)
 		}
-		return fmt.Errorf("实时镜像启动后立即退出\n日志：%s%s", logPath, excerpt)
+		return fmt.Errorf("实时镜像启动后立即退出：%w\n日志：%s%s", &scrcpyStartupExitError{}, logPath, excerpt)
 	case <-time.After(700 * time.Millisecond):
 		if placement != nil {
-			if err := verifyScrcpyWindowPlacementNative(cmd.Process.Pid, placement); err != nil {
-				return fmt.Errorf("实时镜像已启动，但窗口排列未生效：%w", err)
+			if err := verifyScrcpyWindowPlacementNative(cmd.Process.Pid, placement, done); err != nil {
+				var exited *scrcpyStartupExitError
+				if errors.As(err, &exited) {
+					return fmt.Errorf("实时镜像启动期间退出：%w\n日志：%s%s", err, logPath, scrcpyLogExcerpt(logPath))
+				}
+				return fmt.Errorf("实时镜像窗口未就绪或排列未生效：%w\n日志：%s%s", err, logPath, scrcpyLogExcerpt(logPath))
 			}
 		}
-		return prepareScrcpyWindow(cmd.Process.Pid)
+		if err := prepareScrcpyWindow(cmd.Process.Pid); err != nil {
+			return err
+		}
+		select {
+		case err := <-done:
+			return fmt.Errorf("实时镜像就绪时退出：%w\n日志：%s%s", &scrcpyStartupExitError{cause: err}, logPath, scrcpyLogExcerpt(logPath))
+		default:
+		}
+		a.remoteMu.Lock()
+		session.Opened = true
+		session.OpenedAt = time.Now()
+		a.remoteMu.Unlock()
+		return nil
 	}
 }
 
@@ -181,6 +236,10 @@ func scrcpyArgs(serial, windowTitle string, alwaysOnTop bool) []string {
 		"--no-clipboard-autosync",
 		"--keep-active",
 		"--stay-awake",
+	}
+	if strings.HasPrefix(serial, "emulator-") {
+		// Avoid reverse-tunnel traffic on the emulator's host transport.
+		args = append(args, "--force-adb-forward")
 	}
 	if alwaysOnTop {
 		args = append(args, "--always-on-top")
@@ -271,7 +330,7 @@ func stopPreviousScrcpyWindow(pid int) error {
 	if readErr != nil {
 		return nil
 	}
-	if !looksLikeScrcpyCommand(strconv.Itoa(pid)+" "+string(command)) || !strings.Contains(string(command), "--window-title=安卓设备矩阵 - ") {
+	if !appOwnedScrcpyProcess(pid, string(command)) {
 		return fmt.Errorf("旧独立窗未退出，请关闭后重试")
 	}
 	if err := process.Kill(); err != nil {
@@ -307,12 +366,15 @@ func scrcpyLogExcerpt(path string) string {
 		return ""
 	}
 	text := strings.TrimSpace(string(data))
+	if i := strings.LastIndex(text, "--- mirror session ---"); i >= 0 {
+		text = strings.TrimSpace(text[i+len("--- mirror session ---"):])
+	}
 	if text == "" {
 		return ""
 	}
 	lines := strings.Split(text, "\n")
-	if len(lines) > 8 {
-		lines = lines[len(lines)-8:]
+	if len(lines) > 30 {
+		lines = lines[len(lines)-30:]
 	}
 	return "\n最近日志：\n" + strings.Join(lines, "\n")
 }
@@ -351,4 +413,31 @@ func scrcpyPlacementArgs(args []string, placement *scrcpyWindowPlacement) []stri
 	}
 	// SDL positions the content; the measured macOS outer frame starts 32 points above it.
 	return append(result, fmt.Sprintf("--window-x=%d", placement.X), fmt.Sprintf("--window-y=%d", placement.Y+32), fmt.Sprintf("--window-height=%d", placement.Height-32))
+}
+
+// GUIHasLiveMirror also covers startup, so the wall does not open competing
+// ADB screenshot requests while an emulator mirror is connecting.
+func (a *App) GUIHasLiveMirror(serial string) bool {
+	a.remoteMu.Lock()
+	session := a.scrcpySessions[serial]
+	if session == nil {
+		a.remoteMu.Unlock()
+		if !strings.HasPrefix(serial, "emulator-") {
+			return false
+		}
+		// Ownership is independent of the visible title; support legacy mirrors.
+		pid, command, ok := runningScrcpyProcessInfo(serial)
+		return ok && appOwnedScrcpyProcess(pid, command)
+	}
+	starting, done := session.Starting || session.Recovering, session.Done
+	a.remoteMu.Unlock()
+	if starting {
+		return true
+	}
+	select {
+	case <-done:
+		return false
+	default:
+		return true
+	}
 }
