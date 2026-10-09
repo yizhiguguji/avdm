@@ -28,6 +28,7 @@ type scrcpySession struct {
 	StartedAt        time.Time
 	Starting         bool
 	Opened           bool
+	OpenedAt         time.Time
 	Stopped          bool
 	Recovering       bool
 	RecoveryAttempts int
@@ -141,6 +142,8 @@ func (a *App) startScrcpySessionWithRecovery(serial, title string, alwaysOnTop b
 		err := cmd.Wait()
 		_ = logFile.Close()
 		a.remoteMu.Lock()
+		session.RecoveryAttempts = consecutiveMirrorRecoveryAttempts(session.RecoveryAttempts, session.OpenedAt, time.Now())
+		runtimeFailure := a.scrcpySessions[serial] == session && session.Opened && !session.Stopped && err != nil
 		recoverWindow := strings.HasPrefix(serial, "emulator-") && a.scrcpySessions[serial] == session && recoverDisconnectedMirror(err, session.Opened, session.Stopped, session.RecoveryAttempts)
 		if recoverWindow {
 			session.Recovering = true
@@ -151,7 +154,10 @@ func (a *App) startScrcpySessionWithRecovery(serial, title string, alwaysOnTop b
 		close(session.Done)
 		done <- err
 		if recoverWindow {
+			a.recordMirrorEvent("WARN", fmt.Sprintf("%s：ADB 连接断开，准备恢复镜像（连续重试 %d/3）", session.Title, session.RecoveryAttempts+1))
 			go a.recoverDisconnectedSession(session)
+		} else if runtimeFailure {
+			a.recordMirrorEvent("ERROR", fmt.Sprintf("%s：实时镜像已退出，连续失败达到上限或退出原因不支持恢复：%v\n日志：%s%s", session.Title, err, logPath, scrcpyLogExcerpt(logPath)))
 		}
 	}()
 
@@ -182,6 +188,7 @@ func (a *App) startScrcpySessionWithRecovery(serial, title string, alwaysOnTop b
 		}
 		a.remoteMu.Lock()
 		session.Opened = true
+		session.OpenedAt = time.Now()
 		a.remoteMu.Unlock()
 		return nil
 	}

@@ -240,6 +240,9 @@ func (g *GUIApp) startControlPreviewLoop() {
 			case <-ticker.C:
 				w.post(func() {
 					if !w.closed.Load() {
+						for _, event := range g.backend.GUIDrainMirrorEvents() {
+							g.appendLog(event.Level, "%s", event.Message)
+						}
 						g.refreshControlScreensAsync()
 						g.probeControlRealtimeAsync()
 						g.updateWallFreshness(time.Now())

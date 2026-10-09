@@ -27,6 +27,7 @@ type App struct {
 	scrcpyLaunchMu sync.Mutex // serializes window reuse and replacement
 	remoteMu       sync.Mutex
 	scrcpySessions map[string]*scrcpySession
+	mirrorEvents   []MirrorEvent
 }
 
 func New() (*App, error) {
