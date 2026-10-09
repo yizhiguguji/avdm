@@ -34,7 +34,7 @@ type scrcpyWindowPlacement struct {
 }
 
 // startScrcpySession is called with scrcpyLaunchMu held by openLiveMirror.
-func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placements ...*scrcpyWindowPlacement) error {
+func (a *App) startScrcpySessionOnce(serial, title string, alwaysOnTop bool, placements ...*scrcpyWindowPlacement) error {
 	var placement *scrcpyWindowPlacement
 	if len(placements) > 0 {
 		placement = placements[0]
@@ -63,13 +63,8 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 			if canReuseScrcpyWindow(strings.Join(existing.Cmd.Args, " "), alwaysOnTop, placement) {
 				return prepareScrcpyWindow(existing.Cmd.Process.Pid)
 			}
-			if err := existing.Cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
-				return fmt.Errorf("关闭旧独立窗失败：%w", err)
-			}
-			select {
-			case <-existing.Done:
-			case <-time.After(3 * time.Second):
-				return fmt.Errorf("旧独立窗未退出，请关闭后重试")
+			if err := stopManagedScrcpyProcess(existing.Cmd.Process, existing.Done, 3*time.Second); err != nil {
+				return err
 			}
 		}
 	}
@@ -105,6 +100,7 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 		return err
 	}
 	logPath := logFile.Name()
+	_, _ = logFile.WriteString("\n--- mirror session ---\n")
 	args := scrcpyArgs(serial, windowTitle, alwaysOnTop)
 	if placement != nil {
 		args = scrcpyPlacementArgs(args, placement)
@@ -139,9 +135,9 @@ func (a *App) startScrcpySession(serial, title string, alwaysOnTop bool, placeme
 	case err := <-done:
 		excerpt := scrcpyLogExcerpt(logPath)
 		if err != nil {
-			return fmt.Errorf("实时镜像启动后退出：%w\n日志：%s%s", err, logPath, excerpt)
+			return fmt.Errorf("实时镜像启动后退出：%w\n日志：%s%s", &scrcpyStartupExitError{cause: err}, logPath, excerpt)
 		}
-		return fmt.Errorf("实时镜像启动后立即退出\n日志：%s%s", logPath, excerpt)
+		return fmt.Errorf("实时镜像启动后立即退出：%w\n日志：%s%s", &scrcpyStartupExitError{}, logPath, excerpt)
 	case <-time.After(700 * time.Millisecond):
 		if placement != nil {
 			if err := verifyScrcpyWindowPlacementNative(cmd.Process.Pid, placement, done); err != nil {
@@ -311,12 +307,15 @@ func scrcpyLogExcerpt(path string) string {
 		return ""
 	}
 	text := strings.TrimSpace(string(data))
+	if i := strings.LastIndex(text, "--- mirror session ---"); i >= 0 {
+		text = strings.TrimSpace(text[i+len("--- mirror session ---"):])
+	}
 	if text == "" {
 		return ""
 	}
 	lines := strings.Split(text, "\n")
-	if len(lines) > 8 {
-		lines = lines[len(lines)-8:]
+	if len(lines) > 30 {
+		lines = lines[len(lines)-30:]
 	}
 	return "\n最近日志：\n" + strings.Join(lines, "\n")
 }
