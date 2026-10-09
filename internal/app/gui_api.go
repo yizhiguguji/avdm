@@ -207,12 +207,7 @@ func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus f
 	if entry.Active.State != "device" {
 		return fmt.Errorf("该设备当前不可实时控制：%s | %s", entry.Label, entry.Active.State)
 	}
-	title := entry.Label
-	if entry.AVD != nil && strings.TrimSpace(entry.AVD.Name) != "" {
-		title = entry.AVD.Name
-	} else if strings.TrimSpace(entry.Active.AVDName) != "" {
-		title = entry.Active.AVDName
-	}
+	title := a.liveMirrorTitle(entry)
 	serial := entry.Active.Serial
 	alwaysOnTop := true
 	if requestedTop != nil {
