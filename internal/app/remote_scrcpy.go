@@ -19,14 +19,19 @@ const (
 )
 
 type scrcpySession struct {
-	AlwaysOnTop bool
-	Done        chan struct{}
-	Serial      string
-	Title       string
-	Cmd         *exec.Cmd
-	LogPath     string
-	StartedAt   time.Time
-	Starting    bool
+	AlwaysOnTop      bool
+	Done             chan struct{}
+	Serial           string
+	Title            string
+	Cmd              *exec.Cmd
+	LogPath          string
+	StartedAt        time.Time
+	Starting         bool
+	Opened           bool
+	Stopped          bool
+	Recovering       bool
+	RecoveryAttempts int
+	Placement        *scrcpyWindowPlacement
 }
 
 type scrcpyWindowPlacement struct {
@@ -35,6 +40,10 @@ type scrcpyWindowPlacement struct {
 
 // startScrcpySession is called with scrcpyLaunchMu held by openLiveMirror.
 func (a *App) startScrcpySessionOnce(serial, title string, alwaysOnTop bool, placements ...*scrcpyWindowPlacement) error {
+	return a.startScrcpySessionWithRecovery(serial, title, alwaysOnTop, 0, placements...)
+}
+
+func (a *App) startScrcpySessionWithRecovery(serial, title string, alwaysOnTop bool, recoveryAttempts int, placements ...*scrcpyWindowPlacement) error {
 	var placement *scrcpyWindowPlacement
 	if len(placements) > 0 {
 		placement = placements[0]
@@ -63,6 +72,9 @@ func (a *App) startScrcpySessionOnce(serial, title string, alwaysOnTop bool, pla
 			if canReuseScrcpyWindow(strings.Join(existing.Cmd.Args, " "), alwaysOnTop, placement) {
 				return prepareScrcpyWindow(existing.Cmd.Process.Pid)
 			}
+			a.remoteMu.Lock()
+			existing.Stopped = true
+			a.remoteMu.Unlock()
 			if err := stopManagedScrcpyProcess(existing.Cmd.Process, existing.Done, 3*time.Second); err != nil {
 				return err
 			}
@@ -80,12 +92,14 @@ func (a *App) startScrcpySessionOnce(serial, title string, alwaysOnTop bool, pla
 		}
 	}
 	session := &scrcpySession{
-		AlwaysOnTop: alwaysOnTop,
-		Done:        make(chan struct{}),
-		Serial:      serial,
-		Title:       title,
-		StartedAt:   time.Now(),
-		Starting:    true,
+		AlwaysOnTop:      alwaysOnTop,
+		Done:             make(chan struct{}),
+		Serial:           serial,
+		Title:            title,
+		StartedAt:        time.Now(),
+		Starting:         true,
+		RecoveryAttempts: recoveryAttempts,
+		Placement:        placement,
 	}
 	a.remoteMu.Lock()
 	if a.scrcpySessions == nil {
@@ -126,9 +140,19 @@ func (a *App) startScrcpySessionOnce(serial, title string, alwaysOnTop bool, pla
 	go func() {
 		err := cmd.Wait()
 		_ = logFile.Close()
-		a.clearScrcpySession(serial, session)
+		a.remoteMu.Lock()
+		recoverWindow := strings.HasPrefix(serial, "emulator-") && a.scrcpySessions[serial] == session && recoverDisconnectedMirror(err, session.Opened, session.Stopped, session.RecoveryAttempts)
+		if recoverWindow {
+			session.Recovering = true
+		} else if a.scrcpySessions[serial] == session {
+			delete(a.scrcpySessions, serial)
+		}
+		a.remoteMu.Unlock()
 		close(session.Done)
 		done <- err
+		if recoverWindow {
+			go a.recoverDisconnectedSession(session)
+		}
 	}()
 
 	select {
@@ -148,7 +172,18 @@ func (a *App) startScrcpySessionOnce(serial, title string, alwaysOnTop bool, pla
 				return fmt.Errorf("实时镜像窗口未就绪或排列未生效：%w\n日志：%s%s", err, logPath, scrcpyLogExcerpt(logPath))
 			}
 		}
-		return prepareScrcpyWindow(cmd.Process.Pid)
+		if err := prepareScrcpyWindow(cmd.Process.Pid); err != nil {
+			return err
+		}
+		select {
+		case err := <-done:
+			return fmt.Errorf("实时镜像就绪时退出：%w\n日志：%s%s", &scrcpyStartupExitError{cause: err}, logPath, scrcpyLogExcerpt(logPath))
+		default:
+		}
+		a.remoteMu.Lock()
+		session.Opened = true
+		a.remoteMu.Unlock()
+		return nil
 	}
 }
 
@@ -374,7 +409,7 @@ func (a *App) GUIHasLiveMirror(serial string) bool {
 		_, command, ok := runningScrcpyProcessInfo(serial)
 		return ok && strings.Contains(command, "--window-title=安卓设备矩阵 - ")
 	}
-	starting, done := session.Starting, session.Done
+	starting, done := session.Starting || session.Recovering, session.Done
 	a.remoteMu.Unlock()
 	if starting {
 		return true
