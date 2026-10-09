@@ -86,3 +86,45 @@ func TestFallbackRetainsEmulatorPermissionRecovery(t *testing.T) {
 		t.Fatalf("lost emulator permission recovery: %v", err)
 	}
 }
+
+func TestFallbackPlacesReadyEmulatorsWithPhones(t *testing.T) {
+	entries := []DeviceEntry{
+		{Key: "phone", Active: &ActiveDevice{Serial: "phone-placeholder", State: "device"}},
+		{Key: "emulator", AVD: &AVD{Name: "test-avd"}, Running: true, Active: &ActiveDevice{Serial: "emulator-placeholder", State: "device", IsEmulator: true}},
+	}
+	keys := []string{"emulator", "phone"}
+	var read []string
+	plan := planScrcpyFallback(keys, entries, func(entry DeviceEntry) (ExternalWindowFrame, error) {
+		read = append(read, entry.Key)
+		return ExternalWindowFrame{Width: 266, Height: 624}, nil
+	}, func(frames []ExternalWindowFrame) []*scrcpyWindowPlacement {
+		if len(frames) != 2 {
+			t.Fatal("emulator missing from placement plan")
+		}
+		return []*scrcpyWindowPlacement{{X: 6, Y: 42, Width: 266, Height: 624}, {X: 278, Y: 42, Width: 266, Height: 624}}
+	})
+	if !reflect.DeepEqual(read, keys) {
+		t.Fatalf("wrong frame query order: %v", read)
+	}
+	for i, key := range keys {
+		err := plan.open(key, func(_ string, placement *scrcpyWindowPlacement) error {
+			if placement == nil || placement.X != 6+272*i || placement.Height != 624 {
+				t.Fatalf("lost placement for %s: %+v", key, placement)
+			}
+			if key == "emulator" && useNativeEmulatorMirror(entries[1], placement) {
+				t.Fatal("ready emulator still requires native window access")
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !useNativeEmulatorMirror(entries[1]) {
+		t.Fatal("authorized normal open lost native emulator window")
+	}
+	entries[1].Active.State = "offline"
+	if !useNativeEmulatorMirror(entries[1], &scrcpyWindowPlacement{}) {
+		t.Fatal("offline emulator incorrectly opens a scrcpy mirror")
+	}
+}

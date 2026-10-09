@@ -13,7 +13,7 @@ type scrcpyFallbackPlan struct {
 	failures   map[string]error
 }
 
-// Plan only healthy phones, retaining individual failures for the batch opener.
+// Plan healthy ADB devices, retaining individual failures for the batch opener.
 func planScrcpyFallback(keys []string, entries []DeviceEntry, readFrame func(DeviceEntry) (ExternalWindowFrame, error), layout func([]ExternalWindowFrame) []*scrcpyWindowPlacement) *scrcpyFallbackPlan {
 	byKey := make(map[string]DeviceEntry, len(entries))
 	for _, entry := range entries {
@@ -23,11 +23,11 @@ func planScrcpyFallback(keys []string, entries []DeviceEntry, readFrame func(Dev
 		placements: map[string]*scrcpyWindowPlacement{},
 		failures:   map[string]error{},
 	}
-	var phoneKeys []string
+	var deviceKeys []string
 	var frames []ExternalWindowFrame
 	for _, key := range normalizedUniqueNames(keys) {
 		entry := byKey[key]
-		if entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running {
+		if isEmulatorEntry(entry) && (entry.Active == nil || entry.Active.State != "device") {
 			plan.placements[key] = &scrcpyWindowPlacement{} // retain native emulator permission recovery
 			continue
 		}
@@ -39,12 +39,12 @@ func planScrcpyFallback(keys []string, entries []DeviceEntry, readFrame func(Dev
 			plan.failures[key] = err
 			continue
 		}
-		phoneKeys = append(phoneKeys, key)
+		deviceKeys = append(deviceKeys, key)
 		frames = append(frames, frame)
 	}
 	if len(frames) > 0 {
 		for i, placement := range layout(frames) {
-			plan.placements[phoneKeys[i]] = placement
+			plan.placements[deviceKeys[i]] = placement
 		}
 	}
 	return plan
