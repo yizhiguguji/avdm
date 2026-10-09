@@ -184,10 +184,11 @@ func (a *App) openLiveMirror(entryKey string, requestedTop *bool, placements ...
 	return a.openLiveMirrorEntry(entry, requestedTop, focusEmulatorWindow, placements...)
 }
 
-// The normal open action focuses existing emulator windows regardless of ADB
-// readiness. An explicit window-level setting remains a phone-only operation.
+// Keep native emulator windows when window access is available. Without access,
+// a ready emulator uses a positioned scrcpy mirror instead of moving its native
+// window. Starting/offline emulators still need native window access.
 func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus func(string, string) error, placements ...*scrcpyWindowPlacement) error {
-	if entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running {
+	if useNativeEmulatorMirror(entry, placements...) {
 		if len(placements) > 0 && placements[0] != nil {
 			return &AccessibilityPermissionRequiredError{Operation: "排列模拟器原生窗口"}
 		}
@@ -231,6 +232,17 @@ func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus f
 		delete(a.cfg.MirrorAlwaysOnTop, serial)
 	}
 	return saveConfig(a.cfg)
+}
+
+func isEmulatorEntry(entry DeviceEntry) bool {
+	return entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running
+}
+
+func useNativeEmulatorMirror(entry DeviceEntry, placements ...*scrcpyWindowPlacement) bool {
+	if !isEmulatorEntry(entry) {
+		return false
+	}
+	return len(placements) == 0 || placements[0] == nil || entry.Active == nil || entry.Active.State != "device"
 }
 
 func (a *App) GUIOpenLiveMirrors(entryKeys []string) error {
