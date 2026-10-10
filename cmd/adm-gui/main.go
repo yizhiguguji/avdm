@@ -132,6 +132,9 @@ type GUIApp struct {
 	packageListBinding       packageListBinding
 	pendingWindowArrangement []string
 	closed                   bool
+	copyFeedbackLabel        *widget.Label
+	copyFeedback             *fyne.Container
+	copyFeedbackGeneration   uint64
 
 	backend *core.App
 	app     fyne.App
@@ -376,7 +379,7 @@ func (g *GUIApp) build() {
 	g.applyWorkbenchCollapseState()
 
 	page := root
-	g.window.SetContent(appFrame(page))
+	g.window.SetContent(g.withCopyFeedback(appFrame(page)))
 }
 
 // applyWorkbenchCollapseState reconciles the docked panes with the current
@@ -1223,6 +1226,7 @@ func (g *GUIApp) copyControlText(label, value string) {
 	}
 	g.app.Clipboard().SetContent(value)
 	g.appendLog("DONE", "已复制%s：%s", label, value)
+	g.showCopyFeedback("已复制" + label)
 }
 
 func (g *GUIApp) copyableControlText(content fyne.CanvasObject, label, value string) fyne.CanvasObject {
