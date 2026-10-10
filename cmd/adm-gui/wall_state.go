@@ -27,6 +27,7 @@ type wallState struct {
 type wallCardState struct {
 	object             fyne.CanvasObject
 	title              *widget.Label
+	identifier         *widget.Label
 	selected           *widget.Check
 	previewBox         *fyne.Container
 	visible            bool

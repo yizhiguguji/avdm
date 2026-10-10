@@ -271,13 +271,22 @@ func (a *App) allDeviceEntries() ([]DeviceEntry, error) {
 		entries = append(entries, entry)
 	}
 
+	sortDeviceEntries(entries)
+	return entries, nil
+}
+
+func sortDeviceEntries(entries []DeviceEntry) {
 	sort.SliceStable(entries, func(i, j int) bool {
+		physicalI := entries[i].Active != nil && !entries[i].Active.IsEmulator
+		physicalJ := entries[j].Active != nil && !entries[j].Active.IsEmulator
+		if physicalI != physicalJ {
+			return physicalI
+		}
 		if entries[i].Running != entries[j].Running {
 			return entries[i].Running
 		}
 		return entries[i].Label < entries[j].Label
 	})
-	return entries, nil
 }
 
 func (a *App) emulatorAVDName(serial string) (string, bool) {

@@ -417,30 +417,14 @@ func (g *GUIApp) buildUninstallPanel() fyne.CanvasObject {
 	return container.NewVBox(listBox, actionBox)
 }
 
-// rebootCurrentDevice is the right icon bar's reboot action: confirm, then
-// reboot the current target device.
-func (g *GUIApp) rebootCurrentDevice() {
-	serial, ok := g.snapshotMainSerial()
-	if !ok {
-		return
-	}
-	g.confirmAction("确认重启", "目标设备："+serial, func() {
-		g.runAction("重启当前设备", func() error { return g.backend.GUIRebootDevice(serial) })
-	})
-}
+// Rail power actions prefer the explicit selection and otherwise use the main target.
+func (g *GUIApp) rebootCurrentDevice() { g.showPowerDialog(true) }
 
-func (g *GUIApp) closeCurrentDevice() {
-	for _, entry := range g.entries {
-		if entry.Key == g.currentDeviceKey {
-			g.showCloseEntryDialog(entry)
-			return
-		}
-	}
-	g.showInfo("请先设置一台可用设备为主目标。")
-}
+func (g *GUIApp) closeCurrentDevice() { g.showPowerDialog(false) }
 
 // All close entry points share the same device-type warning and fixed target.
 func (g *GUIApp) showCloseEntryDialog(entry core.DeviceEntry) {
+	entry.Label = controlCardTitle(entry)
 	if entry.Active == nil {
 		if entry.AVD != nil && entry.Running {
 			name := entry.AVD.Name

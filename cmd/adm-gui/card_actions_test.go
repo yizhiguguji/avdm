@@ -3,6 +3,7 @@ package main
 import (
 	core "adm/internal/app"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +56,7 @@ func TestPreviewCardKeepsCompactActionsAndCompleteMenu(t *testing.T) {
 		for _, item := range menu.Items {
 			items[item.Label] = item
 		}
-		for _, label := range []string{"管理设备…", "隐藏画面", "关闭设备…", "复制设备名称", "复制设备编号"} {
+		for _, label := range []string{"管理设备…", "隐藏画面", "关闭设备…"} {
 			if items[label] == nil || items[label].Action == nil {
 				t.Fatalf("missing menu action %q", label)
 			}
@@ -224,5 +225,43 @@ func TestExternalEmulatorMirrorPausesAndRestoresWallSnapshots(t *testing.T) {
 	}
 	if card.wall.mirrorPaused {
 		t.Fatal("paused indicator not cleared")
+	}
+}
+
+func TestCardMetadataLeftIdentifierAndRightTimestamp(t *testing.T) {
+	g := testWall(t)
+	entry := testWallEntry("one", "serial-one")
+	for _, density := range controlDensityOptions {
+		object := g.buildControlCard(entry, density)
+		card := g.controlCards[entry.Key]
+		card.wall.screenshotAt = time.Now()
+		g.updateWallCardFreshness(card, time.Now())
+		var footer *fyne.Container
+		visitCardObjects(object, func(obj fyne.CanvasObject) {
+			if c, ok := obj.(*fyne.Container); ok {
+				if _, ok := c.Layout.(deviceCardMetadataLayout); ok {
+					footer = c
+				}
+			}
+		})
+		if footer == nil {
+			t.Fatal("missing metadata row")
+		}
+		footer.Resize(fyne.NewSize(density.cardSize.Width-16, 26))
+		left, right := footer.Objects[0], footer.Objects[1]
+		if left.Position().X != 0 || right.Position().X <= left.Position().X+left.Size().Width || right.Position().X+right.Size().Width > footer.Size().Width+.1 {
+			t.Fatalf("metadata overlaps or clips at %s", density.label)
+		}
+		if card.wall.identifier.Text != "serial-one" || card.wall.identifier.Alignment != fyne.TextAlignLeading || card.status.Alignment != fyne.TextAlignTrailing {
+			t.Fatal("metadata text or alignment incorrect")
+		}
+		if !strings.Contains(card.status.Text, card.wall.screenshotAt.Format("15:04:05")) {
+			t.Fatal("timestamp missing")
+		}
+		for _, item := range g.deviceCardMenu(card).Items {
+			if strings.Contains(item.Label, "复制") {
+				t.Fatal("copy still in dropdown")
+			}
+		}
 	}
 }
