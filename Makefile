@@ -54,6 +54,9 @@ package-macos: $(APP_ICON_ICNS)
 	go build -trimpath -ldflags "-s -w -X main.applicationID=$(APP_ID)" -o "$(APP_EXECUTABLE)" ./cmd/adm-gui
 	cp "$(APP_ICON_ICNS)" "$(APP_CONTENTS)/Resources/$(APP_STEM).icns"
 	cp "scripts/install-macos-deps.sh" "$(APP_CONTENTS)/Resources/install-macos-deps.sh"
+	clang -dynamiclib -fobjc-arc -fblocks -framework AppKit scripts/mirror-title-icon.m -o "$(APP_CONTENTS)/Resources/mirror-title-icon.dylib"
+	mkdir -p "$(APP_CONTENTS)/Resources/device-icons"
+	cp assets/device-icons/*.png "$(APP_CONTENTS)/Resources/device-icons/"
 	chmod +x "$(APP_CONTENTS)/Resources/install-macos-deps.sh"
 	printf '%s\n' \
 		'<?xml version="1.0" encoding="UTF-8"?>' \
