@@ -46,6 +46,7 @@ func (g *GUIApp) renderControlCenter() {
 			card.title = controlCardTitle(entry)
 			card.detail = controlCardIdentity(entry)
 			card.wall.title.SetText(card.title)
+			card.wall.identifier.SetText(controlCopyIdentifier(entry))
 			card.wall.selected.SetChecked(g.controlSelected[key])
 			card.wall.visible = false
 		}
@@ -112,10 +113,13 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 	title := widget.NewLabelWithStyle(controlCardTitle(entry), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	title.Truncation = fyne.TextTruncateEllipsis
 	status := widget.NewLabel("等待截图")
+	status.Alignment = fyne.TextAlignTrailing
+	identifier := widget.NewLabel(controlCopyIdentifier(entry))
+	identifier.Truncation = fyne.TextTruncateEllipsis
 	status.Truncation = fyne.TextTruncateEllipsis
 	preview := newPreviewPane("等待截图", spec.previewSize)
 	card := &controlCardView{entryKey: key, entry: entry, serial: serial, title: controlCardTitle(entry), detail: controlCardIdentity(entry), preview: preview, status: status,
-		wall: &wallCardState{title: title, selected: selected, visible: true}}
+		wall: &wallCardState{title: title, identifier: identifier, selected: selected, visible: true}}
 	g.controlCards[key] = card
 	preview.onTap = func(pos fyne.Position, size fyne.Size, img image.Point) {
 		if !card.hidden {
@@ -158,7 +162,8 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 	name := container.NewStack(title, newCopyTapLayer(func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) }))
 	header := container.New(deviceCardHeaderLayout{}, selected, name, container.NewCenter(connectionLabel), more)
 	actions := container.New(deviceActionRowLayout{}, target, independent, back, home, notifications)
-	identity := container.NewStack(container.NewThemeOverride(status, captionTheme{g.app.Settings().Theme()}), newCopyTapLayer(func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }))
+	identifierCopy := container.NewStack(container.NewThemeOverride(identifier, captionTheme{g.app.Settings().Theme()}), newCopyTapLayer(func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }))
+	identity := container.New(deviceCardMetadataLayout{}, identifierCopy, container.NewThemeOverride(status, captionTheme{g.app.Settings().Theme()}))
 	card.wall.object = controlCardSurface(container.New(deviceCardStackLayout{}, header, actions, container.NewCenter(card.wall.previewBox), identity))
 	return card.wall.object
 }
@@ -681,9 +686,6 @@ func (g *GUIApp) deviceCardMenu(card *controlCardView) *fyne.Menu {
 		fyne.NewMenuItem("管理设备…", func() { g.showControlDeviceManageDialog(card.entry) }),
 		fyne.NewMenuItem(hideLabel, func() { g.setControlCardHidden(card.entryKey, !card.hidden) }),
 		fyne.NewMenuItem("关闭设备…", func() { g.showCloseEntryDialog(card.entry) }),
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("复制设备名称", func() { g.copyControlText("设备名称", controlCardTitle(card.entry)) }),
-		fyne.NewMenuItem("复制设备编号", func() { g.copyControlText("设备编号", controlCopyIdentifier(card.entry)) }),
 	)
 }
 

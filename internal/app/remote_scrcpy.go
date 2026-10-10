@@ -121,6 +121,7 @@ func (a *App) startScrcpySessionWithRecovery(serial, title string, alwaysOnTop b
 		args = scrcpyPlacementArgs(args, placement)
 	}
 	cmd := exec.Command(path, args...)
+	configureMirrorTypeIcon(cmd, serial, windowTitle)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {

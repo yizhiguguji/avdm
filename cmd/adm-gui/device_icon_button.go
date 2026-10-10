@@ -143,3 +143,21 @@ func (deviceCardHeaderLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 		x += widths[i] + 4
 	}
 }
+
+// Keep metadata in one compact row without long serials expanding the card.
+type deviceCardMetadataLayout struct{}
+
+func (deviceCardMetadataLayout) MinSize([]fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(0, 26)
+}
+func (deviceCardMetadataLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) != 2 {
+		return
+	}
+	gap := float32(4)
+	left := max(0, (size.Width-gap)*.56)
+	objects[0].Move(fyne.NewPos(0, 0))
+	objects[0].Resize(fyne.NewSize(left, size.Height))
+	objects[1].Move(fyne.NewPos(left+gap, 0))
+	objects[1].Resize(fyne.NewSize(max(0, size.Width-left-gap), size.Height))
+}

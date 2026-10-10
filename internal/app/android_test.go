@@ -83,13 +83,13 @@ func TestParseAVDList(t *testing.T) {
 	input := `Available Android Virtual Devices:
     Name: demo_pixel9pro
   Device: pixel_9_pro (Google)
-    Path: /Users/me/.android/avd/demo_pixel9pro.avd
+    Path: /example/.android/avd/demo_pixel9pro.avd
   Target: Google Play (Google Inc.)
           Based on: Android 15.0 ("VanillaIceCream") Tag/ABI: google_apis_playstore/arm64-v8a
 ---------
     Name: sample_zh
   Device: pixel_9 (Google)
-    Path: /Users/me/.android/avd/sample_zh.avd
+    Path: /example/.android/avd/sample_zh.avd
   Target: Google APIs
 `
 	got := parseAVDList(input)
