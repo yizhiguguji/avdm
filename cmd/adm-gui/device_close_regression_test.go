@@ -94,11 +94,11 @@ func TestManagementWindowActionsDescribeDeviceType(t *testing.T) {
 		window, close string
 		available     bool
 	}{
-		{"在线USB真机", core.DeviceEntry{Running: true, Active: &core.ActiveDevice{State: "device", Serial: "PHONE"}}, "打开独立窗", "关闭真机…", true},
-		{"在线网络设备", core.DeviceEntry{Running: true, Active: &core.ActiveDevice{State: "device", Serial: "192.0.2.1:5555"}}, "打开独立窗", "断开网络设备…", true},
-		{"在线模拟器", core.DeviceEntry{Running: true, Active: &core.ActiveDevice{State: "device", IsEmulator: true}}, "聚焦窗口", "关闭模拟器…", true},
-		{"等待ADB模拟器", core.DeviceEntry{Running: true, AVD: &core.AVD{Name: "Starting_AVD"}}, "聚焦窗口", "关闭模拟器…", true},
-		{"离线模拟器", core.DeviceEntry{Active: &core.ActiveDevice{State: "offline", IsEmulator: true}}, "聚焦窗口", "关闭模拟器…", true},
+		{"在线USB真机", core.DeviceEntry{Running: true, Active: &core.ActiveDevice{State: "device", Serial: "PHONE"}}, "打开独立窗", "关闭此真机", true},
+		{"在线网络设备", core.DeviceEntry{Running: true, Active: &core.ActiveDevice{State: "device", Serial: "192.0.2.1:5555"}}, "打开独立窗", "断开此网络设备", true},
+		{"在线模拟器", core.DeviceEntry{Running: true, Active: &core.ActiveDevice{State: "device", IsEmulator: true}}, "聚焦窗口", "关闭此模拟器", true},
+		{"等待ADB模拟器", core.DeviceEntry{Running: true, AVD: &core.AVD{Name: "Starting_AVD"}}, "聚焦窗口", "关闭此模拟器", true},
+		{"离线模拟器", core.DeviceEntry{Active: &core.ActiveDevice{State: "offline", IsEmulator: true}}, "聚焦窗口", "关闭此模拟器", true},
 		{"未启动模拟器", core.DeviceEntry{AVD: &core.AVD{Name: "Stopped_AVD"}}, "", "", false},
 		{"未授权真机", core.DeviceEntry{Active: &core.ActiveDevice{State: "unauthorized", Serial: "PHONE"}}, "", "", false},
 	} {

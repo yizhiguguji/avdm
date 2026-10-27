@@ -19,7 +19,7 @@ func (g *GUIApp) withCopyFeedback(page fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(page, g.copyFeedback)
 }
 
-func (g *GUIApp) showCopyFeedback(message string) {
+func (g *GUIApp) showTransientFeedback(message string) {
 	if g.copyFeedback == nil {
 		return
 	}

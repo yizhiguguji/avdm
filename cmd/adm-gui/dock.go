@@ -99,14 +99,18 @@ func (g *GUIApp) rightPaneWidth(total float32) float32 {
 }
 
 func (g *GUIApp) logPaneHeight(total float32) float32 {
+	railHeight := dockRailHeight
+	if g.logRail != nil {
+		railHeight = fyne.Max(railHeight, g.logRail.MinSize().Height)
+	}
 	if g.logCollapsed {
-		return dockRailHeight
+		return railHeight
 	}
 	max := total * dockLogMaxFraction
 	if max < dockLogMinHeight {
 		max = dockLogMinHeight
 	}
-	return clampWidth(g.logH, dockLogMinHeight, max)
+	return clampWidth(g.logH, dockLogMinHeight+railHeight, max)
 }
 
 // resizeRightBy: the right divider sits to the left of the right pane, so

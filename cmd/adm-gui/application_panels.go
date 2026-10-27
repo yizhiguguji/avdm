@@ -49,7 +49,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	installButton.Alignment = widget.ButtonAlignCenter
 	installButton.Importance = widget.HighImportance
 
-	multiInstallButton := widget.NewButton("另选安装设备…", func() {
+	multiInstallButton := widget.NewButton("另选安装设备", func() {
 		source := g.apkSourceOrLast()
 		if source == "" {
 			g.showInfo("请输入 APK 路径或 URL。")
@@ -315,7 +315,7 @@ func (g *GUIApp) buildMessagePanel() fyne.CanvasObject {
 	g.registerActionButtons(sendButton, installKeyboardButton)
 
 	return container.NewVBox(
-		sectionTitle("文本输入"),
+		sectionTitle("文本输入 · 主目标"),
 		wrappedLabel("请先让目标 App 的输入框获得焦点"),
 		g.textEntry,
 		g.textHint,
@@ -409,7 +409,7 @@ func (g *GUIApp) buildUninstallPanel() fyne.CanvasObject {
 		g.packagePicker.view(workspacePackageListWidth, 150),
 	)
 	actionBox := container.NewVBox(
-		sectionTitle("执行卸载"),
+		sectionTitle("执行卸载 · 主目标"),
 		g.keepData,
 		g.user0Only,
 		compactButtonBox(uninstallButton, 92),
@@ -422,49 +422,9 @@ func (g *GUIApp) rebootCurrentDevice() { g.showPowerDialog(true) }
 
 func (g *GUIApp) closeCurrentDevice() { g.showPowerDialog(false) }
 
-// All close entry points share the same device-type warning and fixed target.
+// A single-device entry never reads the workbench selection.
 func (g *GUIApp) showCloseEntryDialog(entry core.DeviceEntry) {
-	entry.Label = controlCardTitle(entry)
-	if entry.Active == nil {
-		if entry.AVD != nil && entry.Running {
-			name := entry.AVD.Name
-			g.confirmAction("确认关闭模拟器", "将关闭模拟器："+name, func() { g.runAction("关闭模拟器 "+name, func() error { return g.backend.GUICloseAVD(name) }) })
-			return
-		}
-		g.showInfo("该设备当前未连接或未启动。")
-		return
-	}
-	device := *entry.Active
-	title, warning := "关闭模拟器", "将关闭该模拟器，未保存的操作可能丢失。"
-	physical := !device.IsEmulator && !strings.Contains(device.Serial, ":")
-	if !device.IsEmulator {
-		title, warning = "断开网络设备", "将断开此设备的 ADB 网络连接。"
-	}
-	if physical {
-		title, warning = "关闭真机", "将对真机执行关机，设备会停止运行。请完整输入下方 Serial 确认。"
-	}
-	serialEntry := widget.NewEntry()
-	serialEntry.SetPlaceHolder(device.Serial)
-	content := container.NewVBox(g.dialogMessageContent("目标设备："+entry.Label+"\nSerial："+device.Serial+"\n\n"+warning, fyne.NewSize(640, 200)))
-	if physical {
-		content.Add(serialEntry)
-	}
-	g.showActionDialog("确认"+title, title, true, content, func() {
-		confirmation := device.Serial
-		if physical {
-			confirmation = serialEntry.Text
-			if confirmation != device.Serial {
-				g.showInfo("Serial 不匹配，未执行关机。")
-				return
-			}
-		}
-		g.runAction(title+" "+entry.Label, func() error {
-			if device.IsEmulator {
-				return g.backend.GUICloseDevice(entry.Key)
-			}
-			return g.backend.GUICloseDeviceConfirmed(device.Serial, confirmation)
-		})
-	})
+	g.showPowerTargets([]core.DeviceEntry{entry}, false, "作用范围：当前设备")
 }
 
 func (g *GUIApp) renameAVD(oldName, newName string) bool {
@@ -510,6 +470,7 @@ func (g *GUIApp) validateAVDRename(oldName, newName string) (string, bool) {
 }
 
 func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
+	var d dialog.Dialog
 	title := controlCardTitle(entry)
 	targetLabel := widget.NewLabel(controlCardIdentity(entry))
 	targetLabel.Wrapping = fyne.TextWrapWord
@@ -522,8 +483,14 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 	if windowLabel, closeLabel, available := deviceManagementWindowActions(entry); available {
 		sections = append(sections, container.NewHBox(
 			compactButton(windowLabel, func() { g.openIndependentDeviceWindow(entry.Key, entry.Label) }),
-			compactButton(closeLabel, func() { g.showCloseEntryDialog(entry) }),
+			compactButton(closeLabel, func() { d.Hide(); g.showCloseEntryDialog(entry) }),
 		))
+	}
+	if powerTargetProblem(entry, true) == "" {
+		sections = append(sections, container.NewHBox(compactButton("重启此设备", func() {
+			d.Hide()
+			g.showPowerTargets([]core.DeviceEntry{entry}, true, "作用范围：当前设备")
+		})))
 	}
 	if entry.AVD != nil {
 		nameEntry := widget.NewEntry()
@@ -547,6 +514,14 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 			nameEntry,
 			container.NewHBox(renameButton, mutedText(renameHint)),
 		)
+		remove := compactButton("删除此模拟器", func() {
+			d.Hide()
+			g.showDeleteAVDDialog(actionPlan{Kind: actionDelete, Entries: []core.DeviceEntry{entry}}, true)
+		})
+		remove.Importance = widget.DangerImportance
+		g.prepareActionButton(remove)
+		sections = append(sections, widget.NewSeparator(), container.NewHBox(remove),
+			mutedText("删除此模拟器的配置和数据，操作无法恢复。"))
 	}
 
 	if entry.Active != nil && entry.Active.State == "device" {
@@ -684,7 +659,6 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 		targetLabel,
 		container.NewPadded(container.NewVBox(sections...)),
 	)))
-	var d dialog.Dialog
 	closeButton := compactButton("关闭", func() {
 		d.Hide()
 	})
@@ -697,13 +671,13 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 // Running is also true for online phones, so it is not a device-type check.
 func deviceManagementWindowActions(entry core.DeviceEntry) (string, string, bool) {
 	if entry.Active != nil && entry.Active.IsEmulator || entry.AVD != nil && entry.Running {
-		return "聚焦窗口", "关闭模拟器…", true
+		return "聚焦窗口", "关闭此模拟器", true
 	}
 	if entry.Active != nil && entry.Active.State == "device" {
 		if strings.Contains(entry.Active.Serial, ":") {
-			return "打开独立窗", "断开网络设备…", true
+			return "打开独立窗", "断开此网络设备", true
 		}
-		return "打开独立窗", "关闭真机…", true
+		return "打开独立窗", "关闭此真机", true
 	}
 	return "", "", false
 }

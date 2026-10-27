@@ -77,8 +77,8 @@ func TestDeviceRailOpensAndSwitchesToolsInOneClick(t *testing.T) {
 		t.Fatal("second click must collapse the panel while keeping the rail visible")
 	}
 	test.Tap(g.logToolIcon)
-	if g.logCollapsed || !g.logPanel.Visible() || g.logRail.Visible() {
-		t.Fatal("log must open directly from the rail")
+	if g.logCollapsed || !g.logPanel.Visible() || !g.logRail.Visible() {
+		t.Fatal("opening logs must keep the status and selection actions visible")
 	}
 	test.Tap(g.logToolIcon)
 	if !g.logCollapsed || !g.logRail.Visible() {

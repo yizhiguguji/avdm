@@ -50,15 +50,16 @@ func (g *GUIApp) runEntryBatchAction(name string, entries []core.DeviceEntry, op
 			for _, result := range results {
 				if result.Err != nil {
 					failed = append(failed, result.Entry)
-					lines = append(lines, fmt.Sprintf("失败：%s：%v", result.Entry.Label, result.Err))
-					g.appendLog("ERROR", "%s：%s：%v", name, result.Entry.Label, result.Err)
+					lines = append(lines, fmt.Sprintf("失败：%s：%v", controlCardTitle(result.Entry), result.Err))
+					g.appendLog("ERROR", "%s：%s：%v", name, controlCardTitle(result.Entry), result.Err)
 				} else {
-					g.appendLog("DONE", "%s：%s", name, result.Entry.Label)
+					g.appendLog("DONE", "%s：%s", name, controlCardTitle(result.Entry))
 				}
 			}
 			g.appendLog("INFO", "%s：成功 %d，失败 %d", name, len(results)-len(failed), len(failed))
 			g.refreshAsync(false)
 			if len(failed) == 0 {
+				g.showTransientFeedback(fmt.Sprintf("完成：成功 %d 台", len(results)))
 				return
 			}
 			body := g.dialogMessageContent(fmt.Sprintf("成功 %d，失败 %d。重试仅针对以下失败目标：\n\n%s", len(results)-len(failed), len(failed), strings.Join(lines, "\n")), fyne.NewSize(540, 220))

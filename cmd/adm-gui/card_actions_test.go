@@ -56,7 +56,7 @@ func TestPreviewCardKeepsCompactActionsAndCompleteMenu(t *testing.T) {
 		for _, item := range menu.Items {
 			items[item.Label] = item
 		}
-		for _, label := range []string{"管理设备…", "隐藏画面", "关闭设备…"} {
+		for _, label := range []string{"管理此设备", "隐藏画面", "关闭此真机", "重启此设备"} {
 			if items[label] == nil || items[label].Action == nil {
 				t.Fatalf("missing menu action %q", label)
 			}

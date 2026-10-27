@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/widget"
 )
 
 func TestRailPowerDialogsUseAllSelectedCardNames(t *testing.T) {
@@ -61,6 +62,82 @@ func TestRailPowerDialogsUseAllSelectedCardNames(t *testing.T) {
 		}
 		if strings.Contains(message, "其他主目标") {
 			t.Fatal("selected action used main target")
+		}
+	}
+}
+
+func TestSingleDevicePowerIgnoresOtherSelectedTargets(t *testing.T) {
+	for _, reboot := range []bool{false, true} {
+		g := testWall(t)
+		g.window = g.app.NewWindow("单台操作")
+		g.window.SetContent(g.controlGrid)
+		g.window.Show()
+		t.Cleanup(g.window.Close)
+		target := core.DeviceEntry{Key: "target", Running: true, AVD: &core.AVD{Name: "Demo_AVD"}, Active: &core.ActiveDevice{Serial: "emulator-5554", IsEmulator: true, State: "device"}}
+		g.entries = []core.DeviceEntry{target, {Key: "other", Active: &core.ActiveDevice{Serial: "OTHER_PHONE", State: "device"}}}
+		g.currentDeviceKey = "other"
+		g.controlSelected = map[string]bool{"other": true}
+		if reboot {
+			g.showPowerTargets([]core.DeviceEntry{target}, true, "作用范围：当前设备")
+		} else {
+			g.showCloseEntryDialog(target)
+		}
+		var messages []string
+		inspectManagementObjects(g, func(object fyne.CanvasObject) {
+			if text, ok := object.(*selectableLog); ok {
+				messages = append(messages, text.Text)
+			}
+		})
+		message := strings.Join(messages, "\n")
+		for _, want := range []string{"当前设备", "1 台设备", "Demo_AVD", "emulator-5554"} {
+			if !strings.Contains(message, want) {
+				t.Fatalf("reboot=%t: missing %q in %s", reboot, want, message)
+			}
+		}
+		if strings.Contains(message, "OTHER_PHONE") {
+			t.Fatal("single-device action included another selected device")
+		}
+	}
+}
+
+func TestPowerDialogSkipsUnavailableSelectionWithoutMainFallback(t *testing.T) {
+	for _, ready := range []bool{false, true} {
+		g := testWall(t)
+		g.window = g.app.NewWindow("部分可用目标")
+		g.window.SetContent(g.controlGrid)
+		g.window.Show()
+		t.Cleanup(g.window.Close)
+		g.entries = []core.DeviceEntry{
+			{Key: "offline", Label: "离线目标", Active: &core.ActiveDevice{Serial: "OFFLINE_PHONE", State: "offline"}},
+			{Key: "main", Active: &core.ActiveDevice{Serial: "OTHER_PHONE", State: "device"}},
+		}
+		g.currentDeviceKey = "main"
+		g.controlSelected = map[string]bool{"offline": true}
+		if ready {
+			g.entries = append(g.entries, core.DeviceEntry{Key: "ready", Active: &core.ActiveDevice{Serial: "READY_PHONE", State: "device"}})
+			g.controlSelected["ready"] = true
+		}
+		g.closeCurrentDevice()
+		var messages []string
+		var fields []*widget.Entry
+		inspectManagementObjects(g, func(object fyne.CanvasObject) {
+			if text, ok := object.(*selectableLog); ok {
+				messages = append(messages, text.Text)
+			}
+			if field, ok := object.(*widget.Entry); ok {
+				fields = append(fields, field)
+			}
+		})
+		message := strings.Join(messages, "\n")
+		if !strings.Contains(message, "跳过：") || strings.Contains(message, "OTHER_PHONE") {
+			t.Fatalf("ready=%t: incorrect scope: %s", ready, message)
+		}
+		if ready {
+			if !strings.Contains(message, "1 台设备") || len(fields) != 1 || fields[0].PlaceHolder != "READY_PHONE" {
+				t.Fatalf("available phone lost its exact-identifier confirmation: %s", message)
+			}
+		} else if !strings.Contains(message, "没有可执行的目标") || len(fields) != 0 {
+			t.Fatalf("unavailable selection offered a power action: %s", message)
 		}
 	}
 }

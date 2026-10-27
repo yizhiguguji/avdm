@@ -149,10 +149,10 @@ func (p actionPlan) summary() string {
 func (p actionPlan) details() string {
 	lines := []string{p.summary()}
 	for _, entry := range p.Entries {
-		lines = append(lines, "目标："+entry.Label)
+		lines = append(lines, "目标："+controlCardTitle(entry)+" · 编号："+controlCopyIdentifier(entry))
 	}
 	for _, skipped := range p.Skipped {
-		lines = append(lines, "跳过："+skipped.Entry.Label+"（"+skipped.Reason+"）")
+		lines = append(lines, "跳过："+controlCardTitle(skipped.Entry)+"（"+skipped.Reason+"）")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -248,42 +248,12 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	external := newReadableButton("外部窗", g.openExternalDeviceWindows)
 	create := newReadableButton("创建", g.showCreateAVDDialog)
 	create.SetIcon(theme.ContentAddIcon())
-	clear := newReadableButton("清选", g.clearWorkbenchSelection)
+	clear := newReadableButton("清除选择", g.clearWorkbenchSelection)
 	selection := newReadableButton("选在线", func() { g.selectVisibleWallState(wallStateReady) })
-	selectionMenu := fyne.NewMenu("选择",
-		fyne.NewMenuItem("选中当前显示", g.selectVisibleWallEntries),
-		fyne.NewMenuItem("选中显示的在线设备", func() { g.selectVisibleWallState(wallStateReady) }),
-		fyne.NewMenuItem("选中显示的未启动模拟器", func() { g.selectVisibleWallState(wallStateStopped) }),
-		fyne.NewMenuItem("清空全部选择", func() {
-			g.controlSelected = map[string]bool{}
-			g.updateSelectedLabel()
-			g.renderControlCenter()
-		}),
-	)
-
 	more := newReadableButton("更多", nil)
 	more.SetIcon(theme.MenuDropDownIcon())
-	more.OnTapped = func() {
-		menu := fyne.NewMenu("更多")
-		// Responsive layout puts hidden frequent actions here, preserving a
-		// complete keyboard-accessible path at narrow workbench widths.
-		for _, item := range []struct {
-			button *readableButton
-			label  string
-		}{{frames, "刷新设备画面"}, {external, "打开外部窗口"}, {create, "创建模拟器"}, {selection, "选中显示的在线设备"}, {clear, "清空全部选择"}} {
-			if !item.button.Visible() {
-				button := item.button
-				menu.Items = append(menu.Items, fyne.NewMenuItem(item.label, button.OnTapped))
-			}
-		}
-		selectOther := fyne.NewMenuItem("其他选择方式", nil)
-		selectOther.ChildMenu = selectionMenu
-		menu.Items = append(menu.Items, selectOther,
-			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("设备统计", func() { g.showInfo(controlSummaryText(g.entries)) }),
-		)
-		g.showWorkbenchMenu(more, menu)
-	}
+	more.OnTapped = func() { g.showWorkbenchMenu(more, g.workbenchMoreMenu()) }
+
 	g.registerActionButtons(&scan.Button, &frames.Button, &external.Button, &create.Button, &clear.Button, &selection.Button, &more.Button)
 
 	buttons := []*readableButton{scan, frames, view, external, create, selection, clear, more}
@@ -369,8 +339,10 @@ func (g *GUIApp) startWorkbenchSelection() {
 	if !g.acceptActionPlan(plan) {
 		return
 	}
-	g.runEntryBatchAction(plan.summary(), plan.Entries, func(entry core.DeviceEntry) error {
-		return g.backend.GUIStartAVDs([]string{entry.AVD.Name})
+	g.confirmAction("确认启动选中模拟器", plan.details(), func() {
+		g.runEntryBatchAction(plan.summary(), plan.Entries, func(entry core.DeviceEntry) error {
+			return g.backend.GUIStartAVDs([]string{entry.AVD.Name})
+		})
 	})
 }
 
@@ -379,11 +351,7 @@ func (g *GUIApp) stopWorkbenchSelection() {
 	if !g.acceptActionPlan(plan) {
 		return
 	}
-	g.confirmAction("确认关闭选中模拟器", plan.details(), func() {
-		g.runEntryBatchAction(plan.summary(), plan.Entries, func(entry core.DeviceEntry) error {
-			return stopSelectedEmulator(entry, g.backend.GUICloseAVD, g.backend.GUICloseDeviceConfirmed)
-		})
-	})
+	g.showPowerTargets(plan.Entries, false, plan.details())
 }
 
 // Selection may contain running AVD processes that have not connected to ADB.

@@ -160,6 +160,7 @@ type GUIApp struct {
 
 	installScopeLabel     *widget.Label
 	selectionActions      fyne.CanvasObject
+	batchScopeLabel       *widget.Label
 	currentLabel          *widget.Label
 	selectedLabel         *widget.Label
 	toolSummary           *widget.Label
@@ -363,8 +364,8 @@ func (g *GUIApp) build() {
 
 	g.logRail = g.buildLogRail()
 
-	// The log pane uses a summary rail or full panel, toggled from the right rail.
-	g.logStack = container.NewStack(g.logPanel, g.logRail)
+	// Keep status and selection actions available below the optional log panel.
+	g.logStack = container.NewBorder(nil, g.logRail, nil, nil, g.logPanel)
 
 	g.rightHandle = newResizeHandle(true, g.resizeRightBy)
 	g.logHandle = newResizeHandle(false, g.resizeLogBy)
@@ -393,8 +394,11 @@ func (g *GUIApp) applyWorkbenchCollapseState() {
 	// Right: rightActive names the one visible tool panel ("" = none).
 	g.reconcileRightPanels()
 
-	// Log: narrow summary rail (collapsed) vs full panel (expanded).
-	setPaneCollapsed(g.logPanel, g.logRail, g.logHandle, g.logCollapsed)
+	// Expanding diagnostics must not hide device selection actions.
+	setPaneCollapsed(g.logPanel, nil, g.logHandle, g.logCollapsed)
+	if g.logRail != nil {
+		g.logRail.Show()
+	}
 	if g.logRailSummary != nil {
 		g.logRailSummary.Text = g.logCollapsedSummary()
 		g.logRailSummary.Refresh()
@@ -507,15 +511,10 @@ func (g *GUIApp) buildLogRail() fyne.CanvasObject {
 	g.busyLabel.Truncation = fyne.TextTruncateEllipsis
 	left := container.New(centeredRowLayout{}, details, footerStatus(g.toolSummary, 100, 2), footerStatus(g.busyLabel, 140, 2), container.NewCenter(g.progress))
 	right := container.New(centeredRowLayout{}, footerStatus(g.currentLabel, 180, 0), footerStatus(g.selectedLabel, 190, 0))
-	start := compactButton("启动", g.startWorkbenchSelection)
-	stop := compactButton("关闭…", g.stopWorkbenchSelection)
-	remove := compactButton("删除…", g.showSelectedDeleteAVDDialog)
-	clear := compactButton("清选", g.clearWorkbenchSelection)
-	g.registerActionButtons(start, stop, remove)
-	g.selectionActions = container.New(centeredRowLayout{}, start, stop, remove, clear)
+	g.selectionActions = g.buildBatchActionBar()
 	g.selectionActions.Hide()
-	row := container.NewThemeOverride(container.NewBorder(nil, nil, left, right, g.selectionActions), captionTheme{g.app.Settings().Theme()})
-	return collapsedBar(container.New(workbenchRowInsetLayout{}, row))
+	status := container.NewThemeOverride(container.NewBorder(nil, nil, left, right, nil), captionTheme{g.app.Settings().Theme()})
+	return collapsedBar(container.NewVBox(g.selectionActions, container.New(workbenchRowInsetLayout{}, status)))
 }
 
 func (g *GUIApp) buildTopBar() fyne.CanvasObject {
@@ -946,11 +945,24 @@ func (g *GUIApp) updateSelectedLabel() {
 		}
 		g.controlSummary.SetText(fmt.Sprintf("在线 %d · 已选 %d", ready, selected))
 	}
+	if g.batchScopeLabel != nil {
+		label := fmt.Sprintf("已勾选 %d 台 · 查看清单", selected)
+		if hidden > 0 {
+			label += fmt.Sprintf("（隐藏 %d 台）", hidden)
+		}
+		g.batchScopeLabel.SetText(label)
+	}
 	g.updateToolTargetLabel()
 	setVisible(g.selectionActions, selected > 0)
 	g.updateInstallScopeLabel(selected, hidden)
 	if g.logRail != nil {
 		g.logRail.Refresh()
+	}
+	if g.logStack != nil {
+		g.logStack.Refresh()
+	}
+	if g.vDock != nil {
+		g.vDock.Refresh()
 	}
 }
 
@@ -1226,7 +1238,7 @@ func (g *GUIApp) copyControlText(label, value string) {
 	}
 	g.app.Clipboard().SetContent(value)
 	g.appendLog("DONE", "已复制%s：%s", label, value)
-	g.showCopyFeedback("已复制" + label)
+	g.showTransientFeedback("已复制" + label)
 }
 
 func (g *GUIApp) copyableControlText(content fyne.CanvasObject, label, value string) fyne.CanvasObject {
@@ -1855,6 +1867,12 @@ func (g *GUIApp) showSelectedDeleteAVDDialog() {
 	if !g.acceptActionPlan(plan) {
 		return
 	}
+	g.showDeleteAVDDialog(plan, false)
+}
+
+// Device management passes a fixed single-device plan, independent of the
+// workbench selection. Both entry points share the same confirmation checks.
+func (g *GUIApp) showDeleteAVDDialog(plan actionPlan, current bool) {
 	names := plan.avdNames()
 	running := false
 	for _, entry := range plan.Entries {
@@ -1864,7 +1882,13 @@ func (g *GUIApp) showSelectedDeleteAVDDialog() {
 		g.showInfo("请在设备墙勾选要删除的模拟器；真机不会被删除。")
 		return
 	}
-	warning := wrappedLabel("将删除以下勾选模拟器的配置和数据：\n" + plan.summary())
+	title := "确认删除选中模拟器"
+	summary := plan.summary()
+	if current {
+		title = "确认删除此模拟器"
+		summary = "仅删除当前管理的模拟器，不影响其他勾选设备。"
+	}
+	warning := wrappedLabel("将删除以下模拟器的配置和数据：\n" + summary)
 	list := container.NewVScroll(wrappedLabel(strings.Join(names, "\n")))
 	list.SetMinSize(fyne.NewSize(560, 160))
 	confirm := widget.NewCheck("我确认删除以上模拟器的配置和数据", nil)
@@ -1873,7 +1897,7 @@ func (g *GUIApp) showSelectedDeleteAVDDialog() {
 		forceClose.Hide()
 	}
 	content := container.NewVBox(warning, list, forceClose, confirm)
-	g.showActionDialog("确认删除选中模拟器", "删除", true, content, func() {
+	g.showActionDialog(title, "删除", true, content, func() {
 		if !confirm.Checked {
 			g.showInfo("请先勾选确认删除。")
 			return

@@ -105,21 +105,51 @@ func (g *GUIApp) showPowerDialog(reboot bool) {
 		g.showInfo("请勾选设备或设置主目标。")
 		return
 	}
+	scope := "作用范围：主目标"
+	if g.targetSelection().Explicit {
+		scope = "作用范围：勾选设备"
+	}
+	g.showPowerTargets(targets, reboot, scope)
+}
+
+func (g *GUIApp) showPowerTargets(targets []core.DeviceEntry, reboot bool, scope string) {
+	targets = append([]core.DeviceEntry(nil), targets...)
+	for i := range targets {
+		if targets[i].Active != nil {
+			device := *targets[i].Active
+			targets[i].Active = &device
+		}
+		if targets[i].AVD != nil {
+			avd := *targets[i].AVD
+			targets[i].AVD = &avd
+		}
+		targets[i].Label = controlCardTitle(targets[i])
+	}
 	var problems []string
+	var eligible []core.DeviceEntry
 	for _, entry := range targets {
 		if problem := powerTargetProblem(entry, reboot); problem != "" {
-			problems = append(problems, controlCardTitle(entry)+"："+problem)
+			problems = append(problems, "跳过："+controlCardTitle(entry)+"（"+problem+"）")
+		} else {
+			eligible = append(eligible, entry)
 		}
 	}
-	if len(problems) > 0 {
-		g.showInfo("所选设备无法执行操作：\n" + strings.Join(problems, "\n"))
+	if len(eligible) == 0 {
+		g.showInfo("没有可执行的目标，未操作其他设备。\n" + strings.Join(problems, "\n"))
 		return
+	}
+	targets = eligible
+	if len(problems) > 0 {
+		scope += "\n" + strings.Join(problems, "\n")
 	}
 	action := "关闭"
 	if reboot {
 		action = "重启"
 	}
 	message := powerConfirmationMessage(targets, reboot)
+	if scope != "" {
+		message = scope + "\n\n" + message
+	}
 	content := container.NewVBox(g.dialogMessageContent(message, fyne.NewSize(640, 240)))
 	fields := map[string]*widget.Entry{}
 	if !reboot {

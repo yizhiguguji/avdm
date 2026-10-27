@@ -682,11 +682,22 @@ func (g *GUIApp) deviceCardMenu(card *controlCardView) *fyne.Menu {
 	if card.hidden {
 		hideLabel = "显示画面"
 	}
-	return fyne.NewMenu("设备操作",
-		fyne.NewMenuItem("管理设备…", func() { g.showControlDeviceManageDialog(card.entry) }),
+	entry := card.entry
+	menu := fyne.NewMenu("当前设备操作",
+		fyne.NewMenuItem("管理此设备", func() { g.showControlDeviceManageDialog(entry) }),
 		fyne.NewMenuItem(hideLabel, func() { g.setControlCardHidden(card.entryKey, !card.hidden) }),
-		fyne.NewMenuItem("关闭设备…", func() { g.showCloseEntryDialog(card.entry) }),
 	)
+	reboot := fyne.NewMenuItem("重启此设备", func() { g.showPowerTargets([]core.DeviceEntry{entry}, true, "作用范围：当前设备") })
+	reboot.Disabled = powerTargetProblem(entry, true) != ""
+	close := fyne.NewMenuItem(deviceCloseActionLabel(entry), func() { g.showCloseEntryDialog(entry) })
+	close.Disabled = powerTargetProblem(entry, false) != ""
+	menu.Items = append(menu.Items, fyne.NewMenuItemSeparator(), reboot, close)
+	if entry.AVD != nil {
+		menu.Items = append(menu.Items, fyne.NewMenuItemSeparator(), fyne.NewMenuItem("删除此模拟器", func() {
+			g.showDeleteAVDDialog(actionPlan{Kind: actionDelete, Entries: []core.DeviceEntry{entry}}, true)
+		}))
+	}
+	return menu
 }
 
 func (g *GUIApp) pauseEmulatorSnapshotForMirror(card *controlCardView) bool {
