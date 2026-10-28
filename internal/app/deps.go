@@ -56,7 +56,20 @@ func (a *App) GUIInstallMacOSDependencies() (string, error) {
 		if text == "" {
 			text = err.Error()
 		}
-		return text, fmt.Errorf("依赖安装失败：%s", firstLine(text))
+		details := dependencyFailureDetails(text)
+		if cache, cacheErr := os.UserCacheDir(); cacheErr == nil {
+			dir := filepath.Join(cache, "adm", "logs")
+			if os.MkdirAll(dir, 0700) == nil {
+				if file, fileErr := os.CreateTemp(dir, "dependency-install-*.log"); fileErr == nil {
+					_, writeErr := file.WriteString(text)
+					closeErr := file.Close()
+					if writeErr == nil && closeErr == nil {
+						details += "\n\n完整安装日志：" + file.Name()
+					}
+				}
+			}
+		}
+		return text, fmt.Errorf("依赖安装失败：%s", details)
 	}
 	a.tools.Refresh()
 	normalizeProcessEnv(a.tools)
@@ -86,4 +99,14 @@ func findMacOSDepsScript() (string, error) {
 		}
 	}
 	return "", errors.New("未找到依赖安装脚本；请确认 App 包含 Contents/Resources/install-macos-deps.sh，或在源码目录运行 make deps-macos")
+}
+
+// Keep the diagnostic tail, where package download errors and their causes appear,
+// rather than reporting the first successful prerequisite as the failure.
+func dependencyFailureDetails(output string) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) > 24 {
+		lines = lines[len(lines)-24:]
+	}
+	return strings.Join(lines, "\n")
 }

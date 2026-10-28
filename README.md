@@ -34,6 +34,7 @@ make deps-macos
 安装脚本可以重复运行，会通过 Homebrew 安装缺失工具，并调用 `sdkmanager` 安装所需的 Android SDK 组件：
 
 - `go`：用于本地编译。
+- `openjdk`：为 Android SDK 命令提供 Java 运行环境。
 - `android-commandlinetools`：提供 `adb`、`emulator`、`avdmanager`、`sdkmanager` 等工具。
 - `scrcpy`：用于低延迟的实时设备镜像。
 - Android SDK 的 `platform-tools`、`emulator`、`platforms;android-36`，以及推荐的 ARM64 Play Store 系统镜像。
@@ -41,6 +42,8 @@ make deps-macos
 请先按 [Homebrew 官方说明](https://brew.sh/)安装 Homebrew，再执行 `make deps-macos`。
 
 打包后的应用也包含同一安装脚本，路径为 `安卓设备矩阵.app/Contents/Resources/install-macos-deps.sh`。在界面中打开「工具健康状态」，点击「安装/修复依赖」，完成后点击「重新检查」更新工具路径。
+
+缺少依赖时，空设备列表和设备检测错误框也提供「安装/修复依赖」入口；修复结束后自动重新检测。工具状态会列出不可用工具与辅助功能授权问题，点击底部工具状态可查看详情。安装脚本逐项安装 Android SDK 组件，每项失败最多尝试三次；仍失败时停止后续安装，并在错误框显示日志末尾及完整日志的保存位置。
 
 工具查找会优先使用配置中的指定路径，再检查 `ANDROID_HOME`、`ANDROID_SDK_ROOT`、用户目录和 Homebrew 中的常见 Android SDK 位置，最后检查 `PATH`。已安装的 Android Studio 工具也可复用。
 

@@ -22,7 +22,7 @@ require_brew() {
 
 brew_install_if_missing() {
   local formula="$1"
-  if brew list --versions "$formula" >/dev/null 2>&1; then
+  if brew list --formula --versions "$formula" >/dev/null 2>&1 || brew list --cask --versions "$formula" >/dev/null 2>&1; then
     log "$formula already installed"
     return
   fi
@@ -63,14 +63,35 @@ install_android_components() {
   fi
 
   log "Accepting Android SDK licenses"
-  yes | "$sdkmanager" --licenses >/dev/null || true
+  # yes may receive SIGPIPE when sdkmanager finishes; check sdkmanager's exit code.
+  set +e
+  yes | "$sdkmanager" --licenses
+  local license_status=${PIPESTATUS[1]}
+  set -e
+  if [[ "$license_status" -ne 0 ]]; then
+    log "ERROR: Android SDK license check failed (exit $license_status)"
+    return "$license_status"
+  fi
 
-  log "Installing Android SDK runtime components"
-  "$sdkmanager" \
-    "platform-tools" \
-    "emulator" \
-    "platforms;android-36" \
-    "system-images;android-36;google_apis_playstore;arm64-v8a"
+  local component
+  for component in "platform-tools" "emulator" "platforms;android-36" "system-images;android-36;google_apis_playstore;arm64-v8a"; do
+    log "Installing Android SDK component: $component"
+    local attempt install_status=0
+    for attempt in 1 2 3; do
+      if "$sdkmanager" --verbose "$component"; then
+        install_status=0
+        log "Installed Android SDK component: $component"
+        break
+      else
+        install_status=$?
+        log "Download/install attempt $attempt/3 failed: $component (exit $install_status)"
+      fi
+    done
+    if [[ "$install_status" -ne 0 ]]; then
+      log "ERROR: Android SDK component failed: $component (exit $install_status)"
+      return "$install_status"
+    fi
+  done
 }
 
 print_summary() {
@@ -87,6 +108,11 @@ print_summary() {
 main() {
   require_macos
   require_brew
+
+  brew_install_if_missing openjdk
+  export JAVA_HOME="$(brew --prefix openjdk)/libexec/openjdk.jdk/Contents/Home"
+  export PATH="$JAVA_HOME/bin:$PATH"
+  "$JAVA_HOME/bin/java" -version
 
   brew_install_if_missing go
   brew_install_if_missing android-commandlinetools

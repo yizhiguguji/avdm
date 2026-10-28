@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"image"
+	"strings"
 	"time"
 )
 
@@ -170,6 +171,15 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 
 func emptyDeviceWall(g *GUIApp) fyne.CanvasObject {
 	scan := widget.NewButton("重新扫描", func() { g.refreshAsync(false) })
+	if missing := missingInstallableToolStatuses(g.toolStatuses); len(missing) > 0 {
+		repair := widget.NewButton("安装/修复依赖", g.repairDependencies)
+		repair.Importance = widget.HighImportance
+		g.prepareActionButton(repair)
+		g.prepareActionButton(scan)
+		message := widget.NewLabel("运行依赖不可用：" + strings.Join(toolStatusNames(missing), "、") + "。修复后将自动重新检测设备。")
+		message.Wrapping = fyne.TextWrapWord
+		return container.NewVBox(message, container.NewHBox(repair, scan))
+	}
 	create := widget.NewButton("创建模拟器", g.showCreateAVDDialog)
 	g.prepareActionButton(scan)
 	return container.NewVBox(widget.NewLabel("没有检测到设备。连接手机并开启 USB 调试，或创建一个模拟器。"), container.NewHBox(scan, create))

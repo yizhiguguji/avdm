@@ -38,16 +38,15 @@ type GUIAVDActionTarget struct {
 }
 
 func (a *App) GUIState() (GUIState, error) {
+	// Refresh tools before querying devices so repaired paths are used immediately.
+	tools := a.GUIToolStatuses()
 	if a.currentDeviceSnapshot() == nil {
 		a.restoreLastReadyDeviceForGUI()
 	}
 	entries, err := a.allDeviceEntries()
 	if err != nil {
-		return GUIState{}, err
+		return GUIState{Tools: tools}, err
 	}
-	// GUIToolStatuses runs adb/IO and reads cfg.ToolPaths (never written in GUI
-	// mode); compute it before taking the lock.
-	tools := a.GUIToolStatuses()
 
 	a.mu.Lock()
 	defer a.mu.Unlock()

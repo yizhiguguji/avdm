@@ -509,7 +509,7 @@ func (g *GUIApp) buildLogRail() fyne.CanvasObject {
 	g.logRailSummary.TextSize = 12
 	details := compactButton("检查工具", g.showToolHealthDialog)
 	g.busyLabel.Truncation = fyne.TextTruncateEllipsis
-	left := container.New(centeredRowLayout{}, details, footerStatus(g.toolSummary, 100, 2), footerStatus(g.busyLabel, 140, 2), container.NewCenter(g.progress))
+	left := container.New(centeredRowLayout{}, details, container.NewStack(footerStatus(g.toolSummary, 210, 2), newCopyTapLayer(g.showToolHealthDialog)), footerStatus(g.busyLabel, 140, 2), container.NewCenter(g.progress))
 	right := container.New(centeredRowLayout{}, footerStatus(g.currentLabel, 180, 0), footerStatus(g.selectedLabel, 190, 0))
 	g.selectionActions = g.buildBatchActionBar()
 	g.selectionActions.Hide()
@@ -543,6 +543,7 @@ func (g *GUIApp) buildTopBar() fyne.CanvasObject {
 }
 
 func (g *GUIApp) showToolHealthDialog() {
+	var d dialog.Dialog
 	statuses := g.toolStatuses
 	if len(statuses) == 0 {
 		statuses = []core.ToolStatus{{Name: "工具状态", Available: false, Error: "暂无工具状态，请先刷新设备列表"}}
@@ -554,28 +555,58 @@ func (g *GUIApp) showToolHealthDialog() {
 		rows = append(rows, toolStatusCompactRow(status))
 	}
 
-	refreshButton := compactButton("重新检查", func() {
-		g.refreshAsync(false)
+	refreshButton := widget.NewButton("重新检查", func() {
+		g.runModalLoad("重新检查工具", func() (any, error) {
+			return g.backend.GUIState()
+		}, func(value any) {
+			g.applyState(value.(core.GUIState), false)
+			d.Hide()
+			g.showToolHealthDialog()
+		})
 	})
 	refreshButton.Importance = widget.MediumImportance
 	g.prepareActionButton(refreshButton)
-	installButton := compactButton("安装/修复依赖", nil)
-	installButton.Importance = widget.HighImportance
+	installButton := widget.NewButton("安装/修复依赖", nil)
+	installButton.Importance = widget.MediumImportance
 	installButton.OnTapped = func() {
+		d.Hide()
 		g.confirmDependencyBootstrap(bootstrap, missing)
 	}
 	g.prepareActionButton(installButton)
 	if !bootstrap.Supported {
 		installButton.Disable()
 	}
-	closeButton := compactButton("关闭", nil)
-	permissionButton := compactButton("辅助功能授权", func() {
+	closeButton := widget.NewButton("关闭", nil)
+	closeButton.Importance = widget.MediumImportance
+	permissionButton := widget.NewButton("辅助功能授权", func() {
+		d.Hide()
 		g.showAccessibilityPermissionDialog("")
 	})
+	permissionButton.Importance = widget.MediumImportance
+	permissionMissing := false
+	for _, status := range statuses {
+		if status.Name == "macOS 辅助功能" && !status.Available {
+			permissionMissing = true
+		}
+	}
+	if !permissionMissing {
+		permissionButton.Hide()
+	}
+	if len(missing) > 0 && bootstrap.Supported {
+		installButton.Importance = widget.HighImportance
+	} else if permissionMissing {
+		permissionButton.Importance = widget.HighImportance
+	} else {
+		closeButton.Importance = widget.HighImportance
+	}
 	list := container.NewVScroll(container.NewVBox(rows...))
 	list.SetMinSize(fyne.NewSize(720, 280))
 
-	summary := widget.NewLabel(toolHealthSummary(missing, bootstrap))
+	summaryText := toolHealthSummary(missing, bootstrap)
+	if permissionMissing && len(missing) == 0 {
+		summaryText = "运行依赖已就绪。辅助功能未授权，聚焦和排列外部窗口前需要开启权限。"
+	}
+	summary := widget.NewLabel(summaryText)
 	summary.Wrapping = fyne.TextWrapWord
 	scriptHint := widget.NewLabel(bootstrapHint(bootstrap))
 	scriptHint.Wrapping = fyne.TextWrapWord
@@ -583,18 +614,19 @@ func (g *GUIApp) showToolHealthDialog() {
 	copyButton := widget.NewButton("复制检测结果", func() {
 		g.app.Clipboard().SetContent(toolHealthDetails(statuses, bootstrap))
 	})
-	footer := container.NewVBox(mutedText("Android SDK / Homebrew / PATH 检测结果"), container.NewCenter(container.NewHBox(copyButton, permissionButton, installButton, refreshButton, closeButton)))
+	copyButton.Importance = widget.MediumImportance
+	footer := container.NewVBox(mutedText("Android SDK / Homebrew / PATH 检测结果"), container.NewBorder(nil, nil, copyButton, container.NewHBox(permissionButton, installButton, refreshButton, closeButton), nil))
 	content := container.NewStack(
 		roundedRect(admColorPanelBG, 10),
 		container.NewPadded(container.NewBorder(
-			container.NewVBox(sectionTitle("工具健康状态"), summary, scriptHint),
+			container.NewVBox(summary, scriptHint),
 			footer,
 			nil,
 			nil,
 			list,
 		)),
 	)
-	d := dialog.NewCustomWithoutButtons("工具健康状态", container.NewGridWrap(fyne.NewSize(800, 480), content), g.activeDialogWindow())
+	d = dialog.NewCustomWithoutButtons("工具健康状态", container.NewGridWrap(fyne.NewSize(800, 480), content), g.activeDialogWindow())
 	closeButton.OnTapped = func() {
 		d.Hide()
 	}
@@ -837,8 +869,12 @@ func (g *GUIApp) refreshAsync(revealTop bool) {
 			g.endTask(btn)
 			g.refreshInFlight = false
 			if err != nil {
+				g.applyToolStatuses(state.Tools)
 				g.appendLog("ERROR", "刷新失败：%v", err)
-				g.showMessageDialog("错误", err.Error(), true)
+				if g.controlGrid != nil {
+					g.renderControlCenter()
+				}
+				g.showDeviceDetectionError(err)
 			} else {
 				g.applyState(state, revealTop)
 				g.appendLog("DONE", "完成：刷新列表")
@@ -853,6 +889,50 @@ func (g *GUIApp) refreshAsync(revealTop bool) {
 	}()
 }
 
+func (g *GUIApp) applyToolStatuses(statuses []core.ToolStatus) {
+	missing := 0
+	for _, tool := range statuses {
+		if !tool.Available {
+			missing++
+		}
+	}
+	if missing == 0 {
+		g.toolSummary.Importance = widget.MediumImportance
+		g.toolSummary.SetText("工具：已就绪")
+	} else {
+		g.toolSummary.Importance = widget.WarningImportance
+		g.toolSummary.SetText(toolActionSummary(statuses))
+	}
+	g.toolDetails = detailedToolStatus(statuses)
+	g.toolStatuses = append([]core.ToolStatus(nil), statuses...)
+}
+
+func toolActionSummary(statuses []core.ToolStatus) string {
+	var unavailable []string
+	permission := false
+	for _, status := range statuses {
+		if status.Available {
+			continue
+		}
+		if status.Name == "macOS 辅助功能" {
+			permission = true
+		} else {
+			unavailable = append(unavailable, status.Name)
+		}
+	}
+	var actions []string
+	if len(unavailable) > 0 {
+		actions = append(actions, "工具不可用："+strings.Join(unavailable, "、"))
+	}
+	if permission {
+		actions = append(actions, "辅助功能未授权")
+	}
+	if len(actions) == 0 {
+		return "工具：已就绪"
+	}
+	return strings.Join(actions, "；")
+}
+
 func (g *GUIApp) applyState(state core.GUIState, revealTop bool) {
 	previousKey := g.currentDeviceKey
 	g.entries = state.Devices
@@ -865,21 +945,7 @@ func (g *GUIApp) applyState(state core.GUIState, revealTop bool) {
 	if g.toolTargetLabel != nil {
 		g.toolTargetLabel.SetText("主目标：" + state.CurrentDevice)
 	}
-	missing := 0
-	for _, tool := range state.Tools {
-		if !tool.Available {
-			missing++
-		}
-	}
-	if missing == 0 {
-		g.toolSummary.Importance = widget.MediumImportance
-		g.toolSummary.SetText("工具：已就绪")
-	} else {
-		g.toolSummary.Importance = widget.WarningImportance
-		g.toolSummary.SetText(fmt.Sprintf("工具：%d 项待处理", missing))
-	}
-	g.toolDetails = detailedToolStatus(state.Tools)
-	g.toolStatuses = append([]core.ToolStatus(nil), state.Tools...)
+	g.applyToolStatuses(state.Tools)
 	if g.apkEntry != nil && strings.TrimSpace(g.apkEntry.Text) == "" {
 		if state.LastAPKSource != "" {
 			g.apkEntry.SetPlaceHolder("输入 APK 路径或 URL；留空使用上次来源")
@@ -1406,6 +1472,28 @@ func (g *GUIApp) showAccessibilityPermissionDialog(message string) {
 	content := container.NewBorder(nil, container.NewCenter(container.NewHBox(closeButton, checkButton, openButton)), nil, nil, container.NewPadded(body))
 	d = dialog.NewCustomWithoutButtons("开启辅助功能权限", content, g.activeDialogWindow())
 	d.Resize(fyne.NewSize(680, 320))
+	d.Show()
+}
+
+func (g *GUIApp) repairDependencies() {
+	g.confirmDependencyBootstrap(g.backend.GUIDependencyBootstrapStatus(), missingInstallableToolStatuses(g.toolStatuses))
+}
+
+func (g *GUIApp) showDeviceDetectionError(err error) {
+	if len(missingInstallableToolStatuses(g.toolStatuses)) == 0 {
+		g.showMessageDialog("设备检测失败", err.Error(), true)
+		return
+	}
+	var d dialog.Dialog
+	repair := widget.NewButton("安装/修复依赖", func() {
+		d.Hide()
+		g.repairDependencies()
+	})
+	repair.Importance = widget.HighImportance
+	closeButton := widget.NewButton("关闭", func() { d.Hide() })
+	body := container.NewVBox(widget.NewLabel("缺少运行依赖，设备检测未完成。修复后将自动重新检测设备。"), g.dialogMessageContent(err.Error(), fyne.NewSize(640, 220)))
+	content := container.NewGridWrap(fyne.NewSize(720, 380), container.NewBorder(nil, container.NewCenter(container.NewHBox(closeButton, repair)), nil, nil, body))
+	d = dialog.NewCustomWithoutButtons("设备检测失败", content, g.activeDialogWindow())
 	d.Show()
 }
 
