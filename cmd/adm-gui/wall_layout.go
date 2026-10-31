@@ -68,7 +68,7 @@ func (l wallWorkspaceLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 // pane would push an otherwise visible second online device below the fold.
 type onlineWorkspaceLayout struct {
 	g     *GUIApp
-	entry *widget.Button
+	entry *readableButton
 }
 
 func (l *onlineWorkspaceLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(320, 240) }

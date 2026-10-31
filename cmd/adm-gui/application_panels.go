@@ -20,7 +20,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	g.installScopeLabel = wrappedLabel("安装范围：优先使用勾选设备；未勾选时使用主目标。")
 	downgradeHint := wrappedLabel("安装旧版本时开启。日常更新通常无需勾选。")
 
-	browseButton := widget.NewButton("选择 APK", func() {
+	browseButton := newActionButton("选择 APK", func() {
 		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				g.showError(err)
@@ -38,7 +38,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	browseButton.Alignment = widget.ButtonAlignCenter
 	browseButton.Importance = widget.MediumImportance
 
-	installButton := widget.NewButton("安装到当前范围", func() {
+	installButton := newActionButton("安装到当前范围", func() {
 		source := g.apkSourceOrLast()
 		if source == "" {
 			g.showInfo("请输入 APK 路径或 URL。")
@@ -49,7 +49,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	installButton.Alignment = widget.ButtonAlignCenter
 	installButton.Importance = widget.HighImportance
 
-	multiInstallButton := widget.NewButton("另选安装设备", func() {
+	multiInstallButton := newActionButton("另选安装设备", func() {
 		source := g.apkSourceOrLast()
 		if source == "" {
 			g.showInfo("请输入 APK 路径或 URL。")
@@ -60,7 +60,7 @@ func (g *GUIApp) buildInstallPanel() fyne.CanvasObject {
 	multiInstallButton.Alignment = widget.ButtonAlignCenter
 	multiInstallButton.Importance = widget.MediumImportance
 
-	reinstallButton := widget.NewButton("用上次 APK 安装", func() {
+	reinstallButton := newActionButton("用上次 APK 安装", func() {
 		g.confirmInstallSelection("重新安装上次 APK", g.lastAPKSource)
 	})
 	reinstallButton.Alignment = widget.ButtonAlignCenter
@@ -286,7 +286,7 @@ func (g *GUIApp) buildMessagePanel() fyne.CanvasObject {
 		g.textHint.SetText("简单 ASCII 会使用 adb input text。")
 	}
 
-	sendButton := widget.NewButton("发送文本", func() {
+	sendButton := newActionButton("发送文本", func() {
 		text := g.textEntry.Text
 		if strings.TrimSpace(text) == "" {
 			g.showInfo("请输入要发送的文本。")
@@ -303,7 +303,7 @@ func (g *GUIApp) buildMessagePanel() fyne.CanvasObject {
 	})
 	sendButton.Importance = widget.HighImportance
 
-	installKeyboardButton := widget.NewButton("安装 ADB Keyboard", func() {
+	installKeyboardButton := newActionButton("安装 ADB Keyboard", func() {
 		serial, ok := g.snapshotMainSerial()
 		if !ok {
 			return
@@ -362,8 +362,8 @@ func (g *GUIApp) buildUninstallPanel() fyne.CanvasObject {
 			return nil
 		})
 	}
-	refreshPackagesButton := widget.NewButton("刷新应用列表", refreshPackages)
-	refreshPackagesButton.Importance = widget.HighImportance
+	refreshPackagesButton := newActionButton("刷新应用列表", refreshPackages)
+	refreshPackagesButton.Importance = widget.MediumImportance
 	g.thirdPartyOnly.OnChanged = func(_ bool) {
 		refreshPackages()
 	}
@@ -374,7 +374,7 @@ func (g *GUIApp) buildUninstallPanel() fyne.CanvasObject {
 		applyPackageFilter()
 	}
 
-	uninstallButton := widget.NewButton("卸载应用", func() {
+	uninstallButton := newActionButton("卸载应用", func() {
 		pkg := g.packagePicker.selectedPackage()
 		if pkg == "" {
 			g.showInfo("请先刷新列表并选择一个应用包。")
@@ -496,7 +496,7 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 		nameEntry := widget.NewEntry()
 		nameEntry.SetText(entry.AVD.Name)
 		nameEntry.SetPlaceHolder("新的模拟器名称")
-		renameButton := widget.NewButton("改名", func() {
+		renameButton := newActionButton("改名", func() {
 			if entry.Running {
 				g.renameRunningAVDWithShutdown(entry.AVD.Name, nameEntry.Text)
 				return
@@ -536,7 +536,7 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 				useADBKeyboard.SetChecked(true)
 			}
 		}
-		sendButton := widget.NewButton("发送文本", func() {
+		sendButton := newActionButton("发送文本", func() {
 			text := textEntry.Text
 			if strings.TrimSpace(text) == "" {
 				g.showInfo("请输入要发送的文本。")
@@ -554,7 +554,7 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 		apkEntry.SetPlaceHolder("APK 路径或 URL；留空使用上次")
 		apkEntry.Wrapping = fyne.TextWrapBreak
 		apkEntry.SetMinRowsVisible(3)
-		installButton := widget.NewButton("安装 APK", func() {
+		installButton := newActionButton("安装 APK", func() {
 			source := strings.TrimSpace(apkEntry.Text)
 			if source == "" {
 				source = g.apkSourceOrLast()
@@ -585,7 +585,7 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 			packagePicker.applyFilter(packageFilter.Text)
 		}
 		var binding packageListBinding
-		refreshPackagesButton := widget.NewButton("刷新应用列表", func() {
+		refreshPackagesButton := newActionButton("刷新应用列表", func() {
 			userOnly := thirdPartyOnly.Checked
 			generation := binding.begin(serial)
 			packagePicker.setPackages(nil)
@@ -605,7 +605,7 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 				return nil
 			})
 		})
-		refreshPackagesButton.Importance = widget.HighImportance
+		refreshPackagesButton.Importance = widget.MediumImportance
 		g.prepareActionButton(refreshPackagesButton)
 		thirdPartyOnly.OnChanged = func(_ bool) {
 			refreshPackagesButton.OnTapped()
@@ -616,7 +616,7 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 		packageFilter.OnSubmitted = func(_ string) {
 			applyPackageFilter()
 		}
-		uninstallButton := widget.NewButton("卸载应用", func() {
+		uninstallButton := newActionButton("卸载应用", func() {
 			pkg := packagePicker.selectedPackage()
 			if pkg == "" {
 				g.showInfo("请先刷新列表并选择一个应用包。")
@@ -662,7 +662,7 @@ func (g *GUIApp) showControlDeviceManageDialog(entry core.DeviceEntry) {
 	closeButton := compactButton("关闭", func() {
 		d.Hide()
 	})
-	closeButton.Importance = widget.HighImportance
+	closeButton.Importance = widget.MediumImportance
 	d = dialog.NewCustomWithoutButtons("设备管理", container.NewVBox(content, container.NewCenter(closeButton)), g.activeDialogWindow())
 	d.Show()
 }

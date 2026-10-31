@@ -7,7 +7,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
 )
 
 // Use the log's selection and read-only behavior without its monospace style
@@ -24,7 +23,7 @@ func newSelectableMessage(message string) *selectableLog {
 
 func (g *GUIApp) dialogMessageContent(message string, size fyne.Size) fyne.CanvasObject {
 	body := newSelectableMessage(message)
-	copyButton := widget.NewButton("复制全部", func() {
+	copyButton := newActionButton("复制全部", func() {
 		g.app.Clipboard().SetContent(message)
 	})
 	footer := container.NewBorder(nil, nil, mutedText("拖选或 ⌘A / ⌘C 复制"), copyButton)

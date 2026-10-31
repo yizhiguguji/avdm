@@ -32,7 +32,11 @@ func waitScrcpyWindowPlacement(placement *scrcpyWindowPlacement, done <-chan err
 		default:
 		}
 		frame, err = read()
-		if err == nil && math.Abs(frame.X-float64(placement.X)) <= 3 && math.Abs(frame.Y-float64(placement.Y)) <= 3 && math.Abs(frame.Width-float64(placement.Width)) <= 3 && math.Abs(frame.Height-float64(placement.Height)) <= 3 {
+		ready := err == nil && frame.Width > 0 && frame.Height > 32
+		if ready && placement != nil {
+			ready = math.Abs(frame.X-float64(placement.X)) <= 3 && math.Abs(frame.Y-float64(placement.Y)) <= 3 && math.Abs(frame.Width-float64(placement.Width)) <= 3 && math.Abs(frame.Height-float64(placement.Height)) <= 3
+		}
+		if ready {
 			// The process may have exited while its last window bounds were queried.
 			select {
 			case cause := <-done:
@@ -47,6 +51,9 @@ func waitScrcpyWindowPlacement(placement *scrcpyWindowPlacement, done <-chan err
 		case <-deadline.C:
 			if err != nil {
 				return fmt.Errorf("等待镜像窗口超时（%s）：%w", timeout, err)
+			}
+			if placement == nil {
+				return fmt.Errorf("等待镜像窗口超时（%s）：窗口尚未就绪", timeout)
 			}
 			return fmt.Errorf("期望窗口位置 (%d,%d)、尺寸 %dx%d，实际窗口位置 (%.0f,%.0f)、尺寸 %.0fx%.0f", placement.X, placement.Y, placement.Width, placement.Height, frame.X, frame.Y, frame.Width, frame.Height)
 		case <-tick.C:

@@ -4,10 +4,11 @@ APP_ID ?= com.zhuiguang.advm
 APP_VERSION ?= 0.1.0
 # Keychain code-signing certificate name. This is an internal keychain artifact
 # (not user-visible); keeping the original name avoids having to recreate the
-# certificate. Builds fall back to ad-hoc signing if it is absent.
+# certificate. Installed builds must not silently fall back to ad-hoc signing.
 LOCAL_CODESIGN_IDENTITY ?= AVDM Local Code Signing
 DETECTED_CODESIGN_IDENTITY := $(shell security find-identity -v -p codesigning 2>/dev/null | grep -Fq '"$(LOCAL_CODESIGN_IDENTITY)"' && printf '%s' '$(LOCAL_CODESIGN_IDENTITY)' || printf '%s' '-')
 CODESIGN_IDENTITY ?= $(DETECTED_CODESIGN_IDENTITY)
+ALLOW_ADHOC_SIGNING ?= 0
 CODESIGN_OPTIONS ?=
 
 BIN_DIR := bin
@@ -20,7 +21,7 @@ APP_ICON_PNG := assets/adm-icon.png
 APP_ICON_ICNS := assets/adm-icon.icns
 APP_ICONSET := $(DIST_DIR)/$(APP_STEM).iconset
 
-.PHONY: all build cli app package-macos deps-macos
+.PHONY: all build cli app package-macos deps-macos check-macos-signing
 
 all: build
 
@@ -49,7 +50,15 @@ $(APP_ICON_ICNS): $(APP_ICON_PNG)
 	sips -z 1024 1024 "$(APP_ICON_PNG)" --out "$(APP_ICONSET)/icon_512x512@2x.png"
 	iconutil -c icns "$(APP_ICONSET)" -o "$(APP_ICON_ICNS)"
 
-package-macos: $(APP_ICON_ICNS)
+check-macos-signing:
+	@if [ "$(CODESIGN_IDENTITY)" = "-" ] || [ -z "$(CODESIGN_IDENTITY)" ]; then \
+		if [ "$(ALLOW_ADHOC_SIGNING)" != "1" ]; then \
+			printf '%s\n' '错误：没有稳定的代码签名身份，已停止打包，避免更新后辅助功能授权失效。' '请配置有效 CODESIGN_IDENTITY；仅调试时可显式设置 ALLOW_ADHOC_SIGNING=1。' >&2; exit 1; \
+		fi; \
+		printf '%s\n' '警告：本次显式使用临时签名；替换已安装应用后可能需要重新授权辅助功能。' >&2; \
+	fi
+
+package-macos: check-macos-signing $(APP_ICON_ICNS)
 	mkdir -p "$(APP_CONTENTS)/MacOS" "$(APP_CONTENTS)/Resources"
 	go build -trimpath -ldflags "-s -w -X main.applicationID=$(APP_ID)" -o "$(APP_EXECUTABLE)" ./cmd/adm-gui
 	cp "$(APP_ICON_ICNS)" "$(APP_CONTENTS)/Resources/$(APP_STEM).icns"
@@ -92,4 +101,4 @@ package-macos: $(APP_ICON_ICNS)
 		> "$(APP_PLIST)"
 	chmod +x "$(APP_EXECUTABLE)"
 	plutil -lint "$(APP_PLIST)"
-	codesign --force --deep $(CODESIGN_OPTIONS) --sign "$(CODESIGN_IDENTITY)" --identifier "$(APP_ID)" "$(APP_BUNDLE)"
+	./scripts/sign-macos-app.sh "$(CODESIGN_IDENTITY)" "$(APP_ID)" "$(APP_BUNDLE)" $(CODESIGN_OPTIONS)

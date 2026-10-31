@@ -555,7 +555,7 @@ func (g *GUIApp) showToolHealthDialog() {
 		rows = append(rows, toolStatusCompactRow(status))
 	}
 
-	refreshButton := widget.NewButton("重新检查", func() {
+	refreshButton := newActionButton("重新检查", func() {
 		g.runModalLoad("重新检查工具", func() (any, error) {
 			return g.backend.GUIState()
 		}, func(value any) {
@@ -566,7 +566,7 @@ func (g *GUIApp) showToolHealthDialog() {
 	})
 	refreshButton.Importance = widget.MediumImportance
 	g.prepareActionButton(refreshButton)
-	installButton := widget.NewButton("安装/修复依赖", nil)
+	installButton := newActionButton("安装/修复依赖", nil)
 	installButton.Importance = widget.MediumImportance
 	installButton.OnTapped = func() {
 		d.Hide()
@@ -576,9 +576,9 @@ func (g *GUIApp) showToolHealthDialog() {
 	if !bootstrap.Supported {
 		installButton.Disable()
 	}
-	closeButton := widget.NewButton("关闭", nil)
+	closeButton := newActionButton("关闭", nil)
 	closeButton.Importance = widget.MediumImportance
-	permissionButton := widget.NewButton("辅助功能授权", func() {
+	permissionButton := newActionButton("辅助功能授权", func() {
 		d.Hide()
 		g.showAccessibilityPermissionDialog("")
 	})
@@ -611,7 +611,7 @@ func (g *GUIApp) showToolHealthDialog() {
 	scriptHint := widget.NewLabel(bootstrapHint(bootstrap))
 	scriptHint.Wrapping = fyne.TextWrapWord
 	scriptHint.Importance = widget.LowImportance
-	copyButton := widget.NewButton("复制检测结果", func() {
+	copyButton := newActionButton("复制检测结果", func() {
 		g.app.Clipboard().SetContent(toolHealthDetails(statuses, bootstrap))
 	})
 	copyButton.Importance = widget.MediumImportance
@@ -802,7 +802,7 @@ func rightToolPanel(content fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
-	clearButton := widget.NewButton("清空日志", func() {
+	clearButton := newActionButton("清空日志", func() {
 		g.logLines = nil
 		g.logPaused = false
 		if g.logHint != nil {
@@ -813,17 +813,17 @@ func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 		g.logFollow = true
 		g.scrollLogToBottom()
 	})
-	clearButton.Importance = widget.LowImportance
-	copyButton := widget.NewButton("复制全部", func() {
+	clearButton.Importance = widget.MediumImportance
+	copyButton := newActionButton("复制全部", func() {
 		g.app.Clipboard().SetContent(strings.Join(g.logLines, "\n"))
 	})
-	copyButton.Importance = widget.LowImportance
-	copySelection := widget.NewButton("复制选中", func() {
+	copyButton.Importance = widget.MediumImportance
+	copySelection := newActionButton("复制选中", func() {
 		if text := g.logLabel.SelectedText(); text != "" {
 			g.app.Clipboard().SetContent(text)
 		}
 	})
-	followButton := widget.NewButton("跟随最新", func() {
+	followButton := newActionButton("跟随最新", func() {
 		if canvas := g.app.Driver().CanvasForObject(g.logLabel); canvas != nil {
 			canvas.Unfocus()
 		}
@@ -833,8 +833,8 @@ func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 		g.logHint.SetText("最近 200 行 · 拖选或 ⌘A / ⌘C")
 		g.scrollLogToBottom()
 	})
-	copySelection.Importance = widget.LowImportance
-	followButton.Importance = widget.LowImportance
+	copySelection.Importance = widget.MediumImportance
+	followButton.Importance = widget.MediumImportance
 	g.logScroll = container.NewScroll(g.logLabel)
 	g.logScroll.OnScrolled = func(_ fyne.Position) {
 		if g.logProgrammaticScroll {
@@ -845,7 +845,12 @@ func (g *GUIApp) buildLogPanel() fyne.CanvasObject {
 	// Collapse is driven by the log icon in the right rail; the header keeps
 	// only the clear/copy actions.
 	g.logHint = widget.NewLabel("最近 200 行 · 拖选或 ⌘A / ⌘C")
-	header := container.NewBorder(nil, nil, container.NewVBox(sectionTitle("任务/日志"), container.NewThemeOverride(g.logHint, captionTheme{g.app.Settings().Theme()})), container.NewHBox(followButton, clearButton, copySelection, copyButton), nil)
+	// Keep the header to one control row. A two-line left block makes Border
+	// stretch the action HBox (and every button) to the combined text height.
+	g.logHint.Importance = widget.LowImportance
+	heading := container.NewHBox(widget.NewLabel("任务/日志"), g.logHint)
+	actions := container.NewCenter(container.NewHBox(followButton, clearButton, copySelection, copyButton))
+	header := container.NewBorder(nil, nil, heading, actions, nil)
 	return panelSurface("", "", container.NewBorder(
 		header, nil, nil, nil, g.logScroll,
 	))
@@ -1245,13 +1250,14 @@ func (g *GUIApp) updateBusyIndicator(name string) {
 	g.progress.Start()
 }
 
-func (g *GUIApp) registerActionButtons(buttons ...*widget.Button) {
+func (g *GUIApp) registerActionButtons(buttons ...fyne.CanvasObject) {
 	for _, button := range buttons {
 		g.prepareActionButton(button)
 	}
 }
 
-func (g *GUIApp) prepareActionButton(button *widget.Button) {
+func (g *GUIApp) prepareActionButton(object fyne.CanvasObject) {
+	button := actionButtonBase(object)
 	if button == nil {
 		return
 	}
@@ -1380,11 +1386,11 @@ func (g *GUIApp) confirmActionWithLabels(title, message, confirmLabel, cancelLab
 	sourceLabel := g.pendingActionButtonLabel
 
 	var d dialog.Dialog
-	cancelButton := widget.NewButton(cancelLabel, func() {
+	cancelButton := newActionButton(cancelLabel, func() {
 		d.Hide()
 	})
 	cancelButton.Importance = widget.MediumImportance
-	confirmButton := widget.NewButton(confirmLabel, func() {
+	confirmButton := newActionButton(confirmLabel, func() {
 		d.Hide()
 		if sourceButton != nil {
 			g.pendingActionButton = sourceButton
@@ -1407,11 +1413,11 @@ func (g *GUIApp) confirmActionWithLabels(title, message, confirmLabel, cancelLab
 
 func (g *GUIApp) showActionDialog(title, actionLabel string, destructive bool, content fyne.CanvasObject, action func()) {
 	var d dialog.Dialog
-	cancelButton := widget.NewButton("取消", func() {
+	cancelButton := newActionButton("取消", func() {
 		d.Hide()
 	})
 	cancelButton.Importance = widget.MediumImportance
-	actionButton := widget.NewButton(actionLabel, func() {
+	actionButton := newActionButton(actionLabel, func() {
 		d.Hide()
 		action()
 	})
@@ -1454,7 +1460,7 @@ func (g *GUIApp) showAccessibilityPermissionDialog(message string) {
 	}
 	body := g.dialogMessageContent(message, fyne.NewSize(640, 220))
 	var d dialog.Dialog
-	openButton := widget.NewButton("打开系统设置", func() {
+	openButton := newActionButton("打开系统设置", func() {
 		settingsURL, err := url.Parse(core.AccessibilitySettingsURL)
 		if err == nil {
 			err = g.app.OpenURL(settingsURL)
@@ -1464,8 +1470,8 @@ func (g *GUIApp) showAccessibilityPermissionDialog(message string) {
 		}
 	})
 	openButton.Importance = widget.HighImportance
-	closeButton := widget.NewButton("稍后", func() { d.Hide() })
-	checkButton := widget.NewButton("已开启，重新检查", func() {
+	closeButton := newActionButton("稍后", func() { d.Hide() })
+	checkButton := newActionButton("已开启，重新检查", func() {
 		d.Hide()
 		g.checkAccessibilityAndResume()
 	})
@@ -1485,12 +1491,12 @@ func (g *GUIApp) showDeviceDetectionError(err error) {
 		return
 	}
 	var d dialog.Dialog
-	repair := widget.NewButton("安装/修复依赖", func() {
+	repair := newActionButton("安装/修复依赖", func() {
 		d.Hide()
 		g.repairDependencies()
 	})
 	repair.Importance = widget.HighImportance
-	closeButton := widget.NewButton("关闭", func() { d.Hide() })
+	closeButton := newActionButton("关闭", func() { d.Hide() })
 	body := container.NewVBox(widget.NewLabel("缺少运行依赖，设备检测未完成。修复后将自动重新检测设备。"), g.dialogMessageContent(err.Error(), fyne.NewSize(640, 220)))
 	content := container.NewGridWrap(fyne.NewSize(720, 380), container.NewBorder(nil, container.NewCenter(container.NewHBox(closeButton, repair)), nil, nil, body))
 	d = dialog.NewCustomWithoutButtons("设备检测失败", content, g.activeDialogWindow())
@@ -1501,10 +1507,10 @@ func (g *GUIApp) showMessageDialog(title, message string, danger bool) {
 	body := g.dialogMessageContent(message, fyne.NewSize(640, 220))
 
 	var d dialog.Dialog
-	okButton := widget.NewButton("关闭", func() {
+	okButton := newActionButton("关闭", func() {
 		d.Hide()
 	})
-	okButton.Importance = widget.HighImportance
+	okButton.Importance = widget.MediumImportance
 
 	content := container.NewGridWrap(fyne.NewSize(720, 340), container.NewBorder(
 		nil,
@@ -1732,10 +1738,10 @@ func absFloat32(value float32) float32 {
 	return value
 }
 
-func compactButton(label string, fn func()) *widget.Button {
-	button := widget.NewButton(label, fn)
+func compactButton(label string, fn func()) *readableButton {
+	button := newActionButton(label, fn)
 	button.Alignment = widget.ButtonAlignCenter
-	button.Importance = widget.LowImportance
+	button.Importance = widget.MediumImportance
 	return button
 }
 
@@ -1754,12 +1760,12 @@ func compactSelectBox(selectWidget *widget.Select, width float32) fyne.CanvasObj
 	)
 }
 
-func compactButtonBox(button *widget.Button, width float32) fyne.CanvasObject {
+func compactButtonBox(button *readableButton, width float32) fyne.CanvasObject {
 	button.Alignment = widget.ButtonAlignCenter
 	return container.NewGridWrap(fyne.NewSize(width, controlCompactControlHeight), button)
 }
 
-func (g *GUIApp) compactActionButton(label string, fn func()) *widget.Button {
+func (g *GUIApp) compactActionButton(label string, fn func()) *readableButton {
 	button := compactButton(label, fn)
 	g.prepareActionButton(button)
 	return button

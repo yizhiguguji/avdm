@@ -54,3 +54,32 @@ func TestToolbarReservesActualButtonTextAndIconWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestActionButtonKeepsSharedStyleAfterStateChanges(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(admTheme{base: theme.DefaultTheme()})
+	b := compactButton("管理", nil)
+	if b.Importance != widget.MediumImportance {
+		t.Fatal("ordinary action must have neutral fill")
+	}
+	r := test.WidgetRenderer(b)
+	b.SetText("重新检查")
+	b.Disable()
+	b.Enable()
+	b.Importance = widget.HighImportance
+	b.Refresh()
+	found := false
+	for _, object := range r.Objects() {
+		if text, ok := object.(*widget.RichText); ok {
+			segment := text.Segments[0].(*widget.TextSegment)
+			found = true
+			if segment.Style.TextStyle.Bold || segment.Text != "重新检查" {
+				t.Fatalf("action renderer lost shared typography: %+v", segment)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("action renderer is missing its label")
+	}
+}

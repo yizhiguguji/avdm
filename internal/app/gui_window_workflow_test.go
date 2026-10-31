@@ -31,9 +31,9 @@ func TestNormalMirrorOpensReadyOfflineAndStartingEmulatorWindows(t *testing.T) {
 				t.Fatalf("normal mirror did not reach native focus: calls=%d err=%v", calls, err)
 			}
 			enabled := true
-			err = a.openLiveMirrorEntry(entry, &enabled, func(string, string) error { t.Fatal("explicit phone-only top setting reached emulator"); return nil })
-			if err == nil || !strings.Contains(err.Error(), "置顶") {
-				t.Fatalf("explicit top guard lost: %v", err)
+			err = a.openLiveMirrorEntry(entry, &enabled, func(string, string) error { return nil })
+			if err != nil {
+				t.Fatalf("emulator rejected shared top setting: %v", err)
 			}
 		})
 	}

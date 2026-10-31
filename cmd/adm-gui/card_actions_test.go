@@ -23,6 +23,8 @@ func cardButtons(object fyne.CanvasObject) map[string]*widget.Button {
 	buttons := map[string]*widget.Button{}
 	visitCardObjects(object, func(object fyne.CanvasObject) {
 		switch button := object.(type) {
+		case *readableButton:
+			buttons[button.Text] = &button.Button
 		case *widget.Button:
 			buttons[button.Text] = button
 		case *deviceIconButton:
@@ -173,6 +175,8 @@ func TestCompactCardKeepsDeviceActionsAbovePreview(t *testing.T) {
 			previewY = pos.Y
 		}
 		switch button := object.(type) {
+		case *readableButton:
+			actionBottom[button.Text] = pos.Y + button.Size().Height
 		case *widget.Button:
 			actionBottom[button.Text] = pos.Y + button.Size().Height
 		case *deviceIconButton:

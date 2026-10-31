@@ -125,6 +125,15 @@ static int title_matches(CFStringRef title, const char* avd, const char* serial)
 	return 0;
 }
 
+// Auxiliary Qt windows remain in AXWindows after being hidden. They can be
+// larger than the device window, so area alone cannot identify the main view.
+static int adm_main_window_title_rank(CFStringRef title) {
+ if (title==NULL || CFStringGetLength(title)==0) return 0;
+ if (CFStringFind(title,CFSTR("Extended controls"),kCFCompareCaseInsensitive).location!=kCFNotFound) return 0;
+ if (cfstring_has_prefix(title,"Android Emulator")) return 2;
+ return 1;
+}
+
 static AXUIElementRef copy_matching_ax_window(pid_t pid, CFStringRef cgTitle, const char* avd, const char* serial) {
 	AXUIElementRef app = AXUIElementCreateApplication(pid);
 	if (app == NULL) {
@@ -139,6 +148,7 @@ static AXUIElementRef copy_matching_ax_window(pid_t pid, CFStringRef cgTitle, co
 	CFIndex count = CFArrayGetCount(windows);
 	AXUIElementRef largestWindow = NULL;
 	double largestArea = 0.0;
+ int largestRank = 0;
 	for (CFIndex i = 0; i < count; i++) {
 		AXUIElementRef win = (AXUIElementRef)CFArrayGetValueAtIndex(windows, i);
 		CFTypeRef titleValue = NULL;
@@ -146,6 +156,8 @@ static AXUIElementRef copy_matching_ax_window(pid_t pid, CFStringRef cgTitle, co
 		if (AXUIElementCopyAttributeValue(win, kAXTitleAttribute, &titleValue) == kAXErrorSuccess && titleValue != NULL) {
 			axTitle = (CFStringRef)titleValue;
 		}
+        int rank = adm_main_window_title_rank(axTitle);
+        if (rank == 0) { if (titleValue != NULL) CFRelease(titleValue); continue; }
 		int matched = 0;
 		if (axTitle != NULL && title_matches(axTitle, avd, serial)) {
 			matched = 1;
@@ -169,13 +181,14 @@ static AXUIElementRef copy_matching_ax_window(pid_t pid, CFStringRef cgTitle, co
 			CGSize size = CGSizeZero;
 			if (AXValueGetValue((AXValueRef)sizeValue, kAXValueCGSizeType, &size)) {
 				double area = (double)size.width * (double)size.height;
-				if (area > largestArea) {
+				if (rank > largestRank || (rank == largestRank && area > largestArea)) {
 					if (largestWindow != NULL) {
 						CFRelease(largestWindow);
 					}
 					CFRetain(win);
 					largestWindow = win;
 					largestArea = area;
+                    largestRank = rank;
 				}
 			}
 			CFRelease(sizeValue);
@@ -1138,4 +1151,13 @@ func tileWorkAreaNative(bounds ExternalWindowFrame) ExternalWindowFrame {
 	b.size.width, b.size.height = C.double(bounds.Width), C.double(bounds.Height)
 	wall := C.adm_tile_work_area(b)
 	return ExternalWindowFrame{X: float64(wall.origin.x), Y: float64(wall.origin.y), Width: float64(wall.size.width), Height: float64(wall.size.height)}
+}
+
+// Exercise the exact native title policy without accessing desktop windows.
+func nativeWindowTitleRank(title string) int {
+	text := C.CString(title)
+	defer C.free(unsafe.Pointer(text))
+	ref := C.CFStringCreateWithCString(C.kCFAllocatorDefault, text, C.kCFStringEncodingUTF8)
+	defer C.CFRelease(C.CFTypeRef(ref))
+	return int(C.adm_main_window_title_rank(ref))
 }

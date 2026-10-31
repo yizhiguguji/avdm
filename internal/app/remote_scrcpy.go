@@ -183,7 +183,8 @@ func (a *App) startScrcpySessionWithRecovery(serial, title string, alwaysOnTop b
 		}
 		return fmt.Errorf("实时镜像启动后立即退出：%w\n日志：%s%s", &scrcpyStartupExitError{}, logPath, excerpt)
 	case <-time.After(700 * time.Millisecond):
-		if placement != nil {
+		{
+			// A running process does not imply SDL has exposed its window yet.
 			if err := verifyScrcpyWindowPlacementNative(cmd.Process.Pid, placement, done); err != nil {
 				var exited *scrcpyStartupExitError
 				if errors.As(err, &exited) {

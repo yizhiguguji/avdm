@@ -41,3 +41,27 @@ func TestMirrorWindowWaitKeepsRealPositionFailure(t *testing.T) {
 		t.Fatalf("wrong window position accepted: %v", err)
 	}
 }
+
+func TestMirrorWaitsForUsableWindowBeforeAXPreparation(t *testing.T) {
+	queries := 0
+	err := waitScrcpyWindowPlacement(nil, make(chan error), func() (ExternalWindowFrame, error) {
+		queries++
+		if queries < 3 {
+			return ExternalWindowFrame{}, errors.New("not-found")
+		}
+		if queries == 3 {
+			return ExternalWindowFrame{}, nil
+		}
+		return ExternalWindowFrame{Width: 266, Height: 624}, nil
+	}, time.Second, time.Millisecond)
+	if err != nil || queries != 4 {
+		t.Fatalf("window prepared before it was usable: queries=%d err=%v", queries, err)
+	}
+}
+
+func TestMirrorReadinessTimeoutDoesNotRequirePlacement(t *testing.T) {
+	err := waitScrcpyWindowPlacement(nil, make(chan error), func() (ExternalWindowFrame, error) { return ExternalWindowFrame{}, nil }, 5*time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("empty window accepted")
+	}
+}

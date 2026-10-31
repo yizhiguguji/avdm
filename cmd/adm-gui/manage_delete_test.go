@@ -48,7 +48,7 @@ func TestManagementDeleteTargetsOnlyThatAVD(t *testing.T) {
 		g.showControlDeviceManageDialog(target)
 		var remove *widget.Button
 		inspectManagementObjects(g, func(object fyne.CanvasObject) {
-			if button, ok := object.(*widget.Button); ok && button.Text == "删除此模拟器" {
+			if button := actionButtonBase(object); button != nil && button.Text == "删除此模拟器" {
 				remove = button
 			}
 		})

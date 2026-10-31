@@ -164,8 +164,8 @@ func (a *App) GUIOpenLiveMirror(entryKey string) error {
 	return a.openLiveMirror(entryKey, nil)
 }
 
-// GUISetLiveMirrorAlwaysOnTop opens/reopens the phone mirror with the chosen
-// window level and remembers it only after the window starts successfully.
+// GUISetLiveMirrorAlwaysOnTop applies the same window policy to phone mirrors
+// and native emulator windows.
 func (a *App) GUISetLiveMirrorAlwaysOnTop(entryKey string, enabled bool) error {
 	return a.openLiveMirror(entryKey, &enabled)
 }
@@ -180,7 +180,11 @@ func (a *App) openLiveMirror(entryKey string, requestedTop *bool, placements ...
 	if !ok {
 		return fmt.Errorf("未找到设备：%s", entryKey)
 	}
-	return a.openLiveMirrorEntry(entry, requestedTop, focusEmulatorWindow, placements...)
+	focus := func(name, serial string) error {
+		enabled := requestedTop == nil || *requestedTop
+		return openNativeEmulatorWindowTop(name, serial, enabled, func(top bool) error { return a.setNativeEmulatorWindowTop(entry, top) }, focusEmulatorWindow)
+	}
+	return a.openLiveMirrorEntry(entry, requestedTop, focus, placements...)
 }
 
 // Keep native emulator windows when window access is available. Without access,
@@ -190,9 +194,6 @@ func (a *App) openLiveMirrorEntry(entry DeviceEntry, requestedTop *bool, focus f
 	if useNativeEmulatorMirror(entry, placements...) {
 		if len(placements) > 0 && placements[0] != nil {
 			return &AccessibilityPermissionRequiredError{Operation: "排列模拟器原生窗口"}
-		}
-		if requestedTop != nil {
-			return fmt.Errorf("置顶开关目前支持真机独立窗")
 		}
 		name, serial := emulatorEntryIdentity(entry)
 		if name == "" && serial == "" {

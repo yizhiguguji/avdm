@@ -9,6 +9,9 @@ func (a *App) planScrcpyFallbackNative(keys []string) (*scrcpyFallbackPlan, erro
 }
 
 func verifyScrcpyWindowPlacementNative(pid int, placement *scrcpyWindowPlacement, done <-chan error) error {
+	if placement == nil {
+		return nil
+	}
 	return fmt.Errorf("当前平台不支持通过启动参数校验窗口排列")
 }
 

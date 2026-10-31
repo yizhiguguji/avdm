@@ -7,7 +7,7 @@ import (
 
 const AccessibilitySettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 
-const AccessibilityPermissionGuide = "请在「系统设置 → 隐私与安全性 → 辅助功能」中开启「安卓设备矩阵.app」。\n\n如果列表中没有此 App，点击「＋」添加 /Applications/安卓设备矩阵.app。\n\n开启后返回 App 重试；若仍提示未授权，请退出并重新打开 App。若开关已开启但仍未授权，请移除旧条目，重新添加上述路径的应用并开启。"
+const AccessibilityPermissionGuide = "请在「系统设置 → 隐私与安全性 → 辅助功能」中开启「安卓设备矩阵.app」。\n\n如果列表中没有此 App，点击「＋」添加 /Applications/安卓设备矩阵.app。\n\n开启后返回 App 重试；若仍提示未授权，请退出并重新打开 App。\n\n如果已开启且重启后仍失败，可能是应用更新后的签名身份与旧授权不匹配：移除旧条目，重新添加上述路径的应用并开启。临时签名构建在下次更新后可能再次失效，需改用固定的代码签名证书。"
 
 type AccessibilityPermissionRequiredError struct {
 	Operation string

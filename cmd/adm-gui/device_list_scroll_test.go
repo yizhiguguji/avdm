@@ -7,7 +7,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 )
 
 func TestStoppedListActionsClearExpandedScrollbar(t *testing.T) {
@@ -29,7 +28,7 @@ func TestStoppedListActionsClearExpandedScrollbar(t *testing.T) {
 		var check func(fyne.CanvasObject, float32)
 		check = func(object fyne.CanvasObject, x float32) {
 			x += object.Position().X
-			if button, ok := object.(*widget.Button); ok {
+			if button := actionButtonBase(object); button != nil {
 				buttons++
 				if x+button.Size().Width > testRight+0.5 || button.Size().Width < button.MinSize().Width {
 					t.Fatalf("%s clipped at width %v: x=%v size=%v right=%v", button.Text, width, x, button.Size(), testRight)
