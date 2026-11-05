@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,35 +24,47 @@ func TestMacOSPackagingRequiresExplicitAdhocOptIn(t *testing.T) {
 }
 
 func TestMacOSSigningSignsNestedCodeThenVerifiesBundle(t *testing.T) {
-	root := t.TempDir()
-	resources := filepath.Join(root, "sample.app", "Contents", "Resources")
-	if err := os.MkdirAll(resources, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(resources, "helper.dylib"), nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	// Run the real script with a fake signer and an empty signing directory.
-	signer := filepath.Join(root, "codesign")
-	if err := os.WriteFile(signer, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$ADM_TEST_SIGNING_CALLS\"\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	trace := filepath.Join(root, "calls")
-	bundle := filepath.Dir(filepath.Dir(resources))
-	cmd := exec.Command("/bin/bash", "../../scripts/sign-macos-app.sh", "-", "com.example.app", bundle)
-	cmd.Env = append(os.Environ(), "PATH="+root+":/usr/bin:/bin", "ADM_SIGNING_DIR="+root, "ADM_TEST_SIGNING_CALLS="+trace)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("signing failed: %v\n%s", err, output)
-	}
-	output, err := os.ReadFile(trace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) != 3 || !strings.Contains(lines[0], "com.example.app.helper") || !strings.HasSuffix(lines[0], "helper.dylib") || !strings.HasSuffix(lines[1], bundle) || lines[2] != "--verify --deep --strict "+bundle {
-		t.Fatalf("incorrect signing order: %s", output)
-	}
-	if strings.Contains(lines[0], "--deep") || strings.Contains(lines[1], "--deep") {
-		t.Fatalf("nested signing relied on implicit identity resolution: %s", output)
+	for _, withLibrary := range []bool{false, true} {
+		t.Run(fmt.Sprintf("library=%t", withLibrary), func(t *testing.T) {
+			root := t.TempDir()
+			resources := filepath.Join(root, "sample.app", "Contents", "Resources")
+			if err := os.MkdirAll(resources, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if withLibrary {
+				if err := os.WriteFile(filepath.Join(resources, "helper.dylib"), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Run the real script with a fake signer and an empty signing directory.
+			signer := filepath.Join(root, "codesign")
+			if err := os.WriteFile(signer, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$ADM_TEST_SIGNING_CALLS\"\n"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			trace := filepath.Join(root, "calls")
+			bundle := filepath.Dir(filepath.Dir(resources))
+			cmd := exec.Command("/bin/bash", "../../scripts/sign-macos-app.sh", "-", "com.example.app", bundle)
+			cmd.Env = append(os.Environ(), "PATH="+root+":/usr/bin:/bin", "ADM_SIGNING_DIR="+root, "ADM_TEST_SIGNING_CALLS="+trace)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("signing failed: %v\n%s", err, output)
+			}
+			output, err := os.ReadFile(trace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			if !withLibrary {
+				if len(lines) != 2 || !strings.HasSuffix(lines[0], bundle) || lines[1] != "--verify --deep --strict "+bundle {
+					t.Fatalf("incorrect bundle-only signing: %s", output)
+				}
+				return
+			}
+			if len(lines) != 3 || !strings.Contains(lines[0], "com.example.app.helper") || !strings.HasSuffix(lines[0], "helper.dylib") || !strings.HasSuffix(lines[1], bundle) || lines[2] != "--verify --deep --strict "+bundle {
+				t.Fatalf("incorrect signing order: %s", output)
+			}
+			if strings.Contains(lines[0], "--deep") || strings.Contains(lines[1], "--deep") {
+				t.Fatalf("nested signing relied on implicit identity resolution: %s", output)
+			}
+		})
 	}
 }
