@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type App struct {
@@ -21,8 +22,9 @@ type App struct {
 	// so concurrent operations (e.g. refreshing while an emulator boots) do
 	// not block each other. cfg.Aliases/cfg.ToolPaths are never written in GUI
 	// mode, so their reads need no lock.
-	mu            sync.Mutex
-	currentDevice *ActiveDevice
+	wirelessRecoveryLast time.Time // guarded by mu
+	mu                   sync.Mutex
+	currentDevice        *ActiveDevice
 
 	scrcpyLaunchMu sync.Mutex // serializes window reuse and replacement
 	remoteMu       sync.Mutex

@@ -87,7 +87,7 @@ func TestWallFilteringAndStateSummary(t *testing.T) {
 func TestWorkbenchToolbarFitsOneRowAndRestoresActions(t *testing.T) {
 	a := test.NewApp()
 	defer a.Quit()
-	objects := make([]fyne.CanvasObject, 8)
+	objects := make([]fyne.CanvasObject, 9)
 	for i := range objects {
 		objects[i] = &canvas.Rectangle{}
 	}
@@ -100,7 +100,7 @@ func TestWorkbenchToolbarFitsOneRowAndRestoresActions(t *testing.T) {
 				t.Fatalf("button %d escaped one-row toolbar at %.0fpx: %v %v", i, width, object.Position(), object.Size())
 			}
 		}
-		for _, index := range []int{0, 2, 7} {
+		for _, index := range []int{0, 2, 8} {
 			if !objects[index].Visible() {
 				t.Fatalf("scan, view and overflow must remain visible: %d", index)
 			}

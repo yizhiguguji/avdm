@@ -48,6 +48,13 @@ func (a *App) GUIState() (GUIState, error) {
 		return GUIState{Tools: tools}, err
 	}
 
+	if a.recoverWirelessEntries(entries) {
+		entries, err = a.allDeviceEntries()
+		if err != nil {
+			return GUIState{Tools: tools}, err
+		}
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	state := GUIState{

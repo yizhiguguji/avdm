@@ -10,6 +10,7 @@ import (
 const appConfigDirName = ".adm"
 
 type Config struct {
+	WirelessDevices   map[string]string `json:"wireless_devices,omitempty"`
 	MirrorAlwaysOnTop map[string]bool   `json:"mirror_always_on_top,omitempty"`
 	ToolPaths         map[string]string `json:"tool_paths"`
 	Aliases           map[string]string `json:"aliases"`

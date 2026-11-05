@@ -22,12 +22,12 @@ func menuLabels(menu *fyne.Menu) []string {
 
 func TestCompleteMenusKeepOrderAndSelectionScope(t *testing.T) {
 	g := testWall(t)
-	want := []string{"视图", "创建模拟器", "选择", "选中设备操作", "诊断"}
+	want := []string{"Wi-Fi 连接手机", "视图", "创建模拟器", "选择", "选中设备操作", "诊断"}
 	if got := menuLabels(g.workbenchMoreMenu()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("wrong menu groups: %v", got)
 	}
 	// Both visible batch overflow and top menu must use the same complete model.
-	top := g.workbenchMoreMenu().Items[3].ChildMenu
+	top := g.workbenchMoreMenu().Items[4].ChildMenu
 	if !reflect.DeepEqual(menuLabels(top), menuLabels(g.selectedDeviceMenu())) {
 		t.Fatal("batch menus disagree")
 	}

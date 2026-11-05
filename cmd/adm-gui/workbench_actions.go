@@ -78,6 +78,7 @@ func (g *GUIApp) workbenchMoreMenu() *fyne.Menu {
 		fyne.NewMenuItem("展开或收起日志", func() { g.logCollapsed = !g.logCollapsed; g.applyWorkbenchCollapseState() }),
 	)
 	return fyne.NewMenu("更多",
+		fyne.NewMenuItem("Wi-Fi 连接手机", g.showWirelessDialog),
 		menuGroup("视图", view),
 		fyne.NewMenuItem("创建模拟器", g.showCreateAVDDialog),
 		menuGroup("选择", g.selectionMenu()),

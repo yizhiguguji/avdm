@@ -157,6 +157,8 @@ func (g *GUIApp) buildControlCard(entry core.DeviceEntry, spec controlDensitySpe
 	connection := "USB"
 	if entry.Active.IsEmulator {
 		connection = "模拟器"
+	} else if core.IsWirelessSerial(entry.Active.Serial) {
+		connection = "Wi-Fi"
 	}
 	connectionLabel := canvas.NewText(connection, admColorSuccess)
 	connectionLabel.TextSize = 11
@@ -182,7 +184,8 @@ func emptyDeviceWall(g *GUIApp) fyne.CanvasObject {
 	}
 	create := newActionButton("创建模拟器", g.showCreateAVDDialog)
 	g.prepareActionButton(scan)
-	return container.NewVBox(widget.NewLabel("没有检测到设备。连接手机并开启 USB 调试，或创建一个模拟器。"), container.NewHBox(scan, create))
+	wireless := newActionButton("Wi-Fi 连接手机", g.showWirelessDialog)
+	return container.NewVBox(widget.NewLabel("没有检测到设备。可通过 USB 或 Wi-Fi 连接手机，也可创建模拟器。"), container.NewHBox(scan, wireless, create))
 }
 
 func (g *GUIApp) buildControlCompactRow(entry core.DeviceEntry) fyne.CanvasObject {

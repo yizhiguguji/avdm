@@ -246,6 +246,7 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	var view *readableButton
 	view = newReadableButton("状态", func() { g.showWallStateMenu(view) })
 	external := newReadableButton("外部窗", g.openExternalDeviceWindows)
+	wireless := newReadableButton("Wi-Fi 连接", g.showWirelessDialog)
 	create := newReadableButton("创建", g.showCreateAVDDialog)
 	create.SetIcon(theme.ContentAddIcon())
 	clear := newReadableButton("清除选择", g.clearWorkbenchSelection)
@@ -254,9 +255,9 @@ func (g *GUIApp) buildDeviceWallPanel() fyne.CanvasObject {
 	more.SetIcon(theme.MenuDropDownIcon())
 	more.OnTapped = func() { g.showWorkbenchMenu(more, g.workbenchMoreMenu()) }
 
-	g.registerActionButtons(&scan.Button, &frames.Button, &external.Button, &create.Button, &clear.Button, &selection.Button, &more.Button)
+	g.registerActionButtons(&scan.Button, &frames.Button, &external.Button, &wireless.Button, &create.Button, &clear.Button, &selection.Button, &more.Button)
 
-	buttons := []*readableButton{scan, frames, view, external, create, selection, clear, more}
+	buttons := []*readableButton{scan, frames, view, external, wireless, create, selection, clear, more}
 	objects := make([]fyne.CanvasObject, len(buttons))
 	for i, button := range buttons {
 		objects[i] = button
@@ -406,18 +407,18 @@ func (workbenchToolbarLayout) MinSize([]fyne.CanvasObject) fyne.Size {
 }
 
 func (workbenchToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) != 8 {
+	if len(objects) != 9 {
 		return
 	}
-	widths := []float32{60, 84, 60, 74, 60, 64, 52, 78}
+	widths := []float32{60, 84, 60, 74, 88, 60, 64, 52, 78}
 	for i, object := range objects {
 		widths[i] = fyne.Max(widths[i], object.MinSize().Width)
 	}
 	gap := theme.Padding()
-	show := []bool{true, false, true, false, false, false, false, true}
-	used := widths[0] + widths[2] + widths[7] + 2*gap + 24
+	show := []bool{true, false, true, false, false, false, false, false, true}
+	used := widths[0] + widths[2] + widths[8] + 2*gap + 24
 	// Selection and start remain inline ahead of secondary operational tools.
-	for _, index := range []int{5, 6, 1, 3, 4} {
+	for _, index := range []int{6, 7, 4, 1, 3, 5} {
 		if used+gap+widths[index] <= size.Width {
 			show[index] = true
 			used += gap + widths[index]
@@ -434,7 +435,7 @@ func (workbenchToolbarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 		if !object.Visible() {
 			object.Show()
 		}
-		if (index == 3 || index == 5) && x > 0 {
+		if (index == 3 || index == 6) && x > 0 {
 			x += 12
 		}
 		object.Move(fyne.NewPos(x, (size.Height-controlCompactControlHeight)/2))

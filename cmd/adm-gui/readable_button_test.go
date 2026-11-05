@@ -41,7 +41,7 @@ func TestToolbarReservesActualButtonTextAndIconWidth(t *testing.T) {
 	a := test.NewApp()
 	defer a.Quit()
 	a.Settings().SetTheme(admTheme{base: theme.DefaultTheme()})
-	objects := make([]fyne.CanvasObject, 8)
+	objects := make([]fyne.CanvasObject, 9)
 	for i := range objects {
 		b := newReadableButton("刷新画面", nil)
 		b.SetIcon(theme.ViewRefreshIcon())
