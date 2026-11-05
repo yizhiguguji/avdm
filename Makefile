@@ -94,6 +94,8 @@ package-macos: check-macos-signing $(APP_ICON_ICNS)
 		'  <string>$(APP_VERSION)</string>' \
 		'  <key>LSApplicationCategoryType</key>' \
 		'  <string>public.app-category.developer-tools</string>' \
+		'  <key>NSLocalNetworkUsageDescription</key>' \
+		'  <string>通过本地网络连接 Android 手机，用于无线调试、安装应用和屏幕镜像。</string>' \
 		'  <key>NSHighResolutionCapable</key>' \
 		'  <true/>' \
 			'</dict>' \
