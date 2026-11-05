@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -153,7 +154,15 @@ func (g *GUIApp) showWirelessDialog() {
 	manual := container.NewVBox(help, widget.NewSeparator(), pairHint,
 		widget.NewForm(widget.NewFormItem("配对地址", pairAddress), widget.NewFormItem("配对码", code)), container.NewHBox(pair),
 		widget.NewSeparator(), connectHint, widget.NewForm(widget.NewFormItem("连接地址", address)), container.NewHBox(connect, disconnect))
-	tabs = container.NewAppTabs(container.NewTabItem("发现设备", discoveryPage), container.NewTabItem("手动连接 / 配对", container.NewVScroll(manual)))
+	qrHelp := widget.NewLabel("使用手机无线调试中的二维码扫描器完成配对，无需输入地址和配对码。")
+	qrHelp.Wrapping = fyne.TextWrapWord
+	qrButton := newActionButton("生成配对二维码", g.showWirelessQRDialog)
+	qrButton.Importance = widget.HighImportance
+	qrPage := container.NewVBox(qrHelp, container.NewHBox(qrButton))
+	tabContent := func(content fyne.CanvasObject) fyne.CanvasObject {
+		return container.New(layout.NewCustomPaddedLayout(12, 8, 0, 0), content)
+	}
+	tabs = container.NewAppTabs(container.NewTabItem("发现设备", tabContent(discoveryPage)), container.NewTabItem("手动连接 / 配对", tabContent(container.NewVScroll(manual))), container.NewTabItem("扫码配对", tabContent(qrPage)))
 	footer := container.NewVBox(container.NewGridWrap(fyne.NewSize(620, 85), result), container.NewCenter(closeButton))
 	content := container.NewBorder(nil, footer, nil, nil, tabs)
 	d = dialog.NewCustomWithoutButtons("Wi-Fi 连接手机", container.NewGridWrap(fyne.NewSize(640, 490), content), g.activeDialogWindow())

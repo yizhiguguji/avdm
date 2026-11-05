@@ -44,11 +44,21 @@ func (a *App) GUIWirelessDevices() ([]GUIWirelessDevice, error) {
 
 func wirelessDeviceList(services []wirelessService, active []ActiveDevice, known map[string]string) []GUIWirelessDevice {
 	byAddress := map[string]GUIWirelessDevice{}
+	serviceAddresses := map[string]string{}
+	serviceAliases := map[string]string{}
 	for _, service := range services {
 		address, err := WirelessAddress(service.Address)
 		if err != nil {
 			continue
 		}
+		discoveredAddress := address
+		serviceName := wirelessConnectServiceName(service.Name)
+		if existing := serviceAddresses[serviceName]; serviceName != "" && existing != "" {
+			address = existing
+		} else if serviceName != "" {
+			serviceAddresses[serviceName] = address
+		}
+		serviceAliases[discoveredAddress] = address
 		name := strings.TrimSpace(service.DisplayName)
 		if name == "" {
 			name = service.Name
@@ -66,17 +76,24 @@ func wirelessDeviceList(services []wirelessService, active []ActiveDevice, known
 		if device.IsEmulator || device.State != "device" || !IsWirelessSerial(device.Serial) {
 			continue
 		}
-		entry := byAddress[device.Serial]
+		address := device.Serial
+		if resolved := serviceAddresses[wirelessConnectServiceName(device.Serial)]; resolved != "" {
+			address = resolved
+		}
+		if canonical := serviceAliases[address]; canonical != "" {
+			address = canonical
+		}
+		entry := byAddress[address]
 		if model := device.Details["model"]; model != "" {
 			entry.Name = model
 		}
 		if entry.Name == "" {
 			entry.Name = "Android 手机"
 		}
-		entry.Address = device.Serial
+		entry.Address = address
 		entry.Status = "已连接"
 		entry.Connected = true
-		byAddress[device.Serial] = entry
+		byAddress[address] = entry
 	}
 	result := make([]GUIWirelessDevice, 0, len(byAddress))
 	for _, device := range byAddress {
@@ -92,4 +109,9 @@ func wirelessDeviceList(services []wirelessService, active []ActiveDevice, known
 		return result[i].Address < result[j].Address
 	})
 	return result
+}
+
+// Match the full service instance, never the model name or just an IP host.
+func wirelessConnectServiceName(value string) string {
+	return strings.TrimSuffix(strings.TrimSuffix(value, "."), "._adb-tls-connect._tcp")
 }

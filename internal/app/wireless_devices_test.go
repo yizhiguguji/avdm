@@ -40,3 +40,34 @@ func TestWirelessDiscoveryMergesConnectionsAndKeepsPairingUnknown(t *testing.T) 
 		}
 	}
 }
+
+func TestWirelessDiscoveryMergesMDNSAndIPTransports(t *testing.T) {
+	services := []wirelessService{
+		{Name: "adb-DEMO001-guid", Address: "192.168.1.20:41000"},
+		{Name: "adb-DEMO001-guid", Address: "192.168.1.21:41000"},
+		{Name: "adb-DEMO002-guid", Address: "192.168.1.22:42000"},
+	}
+	active := []ActiveDevice{
+		{Serial: "adb-DEMO001-guid._adb-tls-connect._tcp", State: "device", Details: map[string]string{"model": "Demo_Phone"}},
+		{Serial: "192.168.1.20:41000", State: "device", Details: map[string]string{"model": "Demo_Phone"}},
+		{Serial: "192.168.1.21:41000", State: "device", Details: map[string]string{"model": "Demo_Phone"}},
+		{Serial: "adb-DEMO002-guid._adb-tls-connect._tcp.", State: "device", Details: map[string]string{"model": "Demo_Phone"}},
+	}
+	got := wirelessDeviceList(services, active, nil)
+	if len(got) != 2 {
+		t.Fatalf("same phone appears more than once: %+v", got)
+	}
+	for _, entry := range got {
+		if !entry.Connected || entry.Status != "已连接" {
+			t.Fatalf("lost connection state: %+v", entry)
+		}
+	}
+}
+
+func TestWirelessDiscoveryDoesNotMergeDifferentServicesWithSameModel(t *testing.T) {
+	services := []wirelessService{{Name: "adb-DEMO001-old", Address: "192.168.1.20:41000"}}
+	active := []ActiveDevice{{Serial: "adb-DEMO002-other._adb-tls-connect._tcp", State: "device", Details: map[string]string{"model": "Demo_Phone"}}}
+	if got := wirelessDeviceList(services, active, nil); len(got) != 2 {
+		t.Fatalf("unrelated devices merged: %+v", got)
+	}
+}
