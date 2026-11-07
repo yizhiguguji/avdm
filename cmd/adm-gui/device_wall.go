@@ -700,6 +700,11 @@ func (g *GUIApp) deviceCardMenu(card *controlCardView) *fyne.Menu {
 		fyne.NewMenuItem("管理此设备", func() { g.showControlDeviceManageDialog(entry) }),
 		fyne.NewMenuItem(hideLabel, func() { g.setControlCardHidden(card.entryKey, !card.hidden) }),
 	)
+	unlock := fyne.NewMenuItem("解锁此设备", func() { g.unlockEntry(entry) })
+	unlockSettings := fyne.NewMenuItem("解锁设置", func() { g.showDeviceUnlockSettings(entry) })
+	unlock.Disabled = entry.Active == nil || entry.Active.State != "device"
+	unlockSettings.Disabled = unlock.Disabled
+	menu.Items = append(menu.Items, fyne.NewMenuItemSeparator(), unlock, unlockSettings)
 	reboot := fyne.NewMenuItem("重启此设备", func() { g.showPowerTargets([]core.DeviceEntry{entry}, true, "作用范围：当前设备") })
 	reboot.Disabled = powerTargetProblem(entry, true) != ""
 	close := fyne.NewMenuItem(deviceCloseActionLabel(entry), func() { g.showCloseEntryDialog(entry) })

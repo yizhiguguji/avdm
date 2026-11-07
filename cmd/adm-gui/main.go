@@ -315,6 +315,7 @@ func (g *GUIApp) show() {
 		})
 	}()
 	g.startControlPreviewLoop()
+	g.startDeviceUnlockMonitor()
 	g.window.ShowAndRun()
 }
 

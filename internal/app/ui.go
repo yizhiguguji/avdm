@@ -11,6 +11,7 @@ import (
 )
 
 type App struct {
+	unlock *deviceUnlockState
 	cfg    *Config
 	tools  *ToolResolver
 	reader *bufio.Reader
